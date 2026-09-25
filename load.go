@@ -48,7 +48,8 @@ type loaded struct {
 	implied []model.Entity // bare entities for series ids
 	points  map[data.SeriesRef][]data.Point
 	probs   []problem
-	err     error // the file as a whole could not be used
+	err     error         // the file as a whole could not be used
+	scratch []metricPoint // one record's points, reused across records
 }
 
 // load reads and maps the file; a file-level failure leaves it contributing nothing.
@@ -132,7 +133,8 @@ func (s *source) mapSeries(inst model.ModuleID, r record, l *loaded, implied map
 	if s.Series == nil {
 		return
 	}
-	e, points, err := s.Series.points(inst, r)
+	e, points, err := s.Series.points(inst, r, l.scratch[:0])
+	l.scratch = points
 	if err != nil {
 		l.probs = append(l.probs, r.problem("%v", err))
 		return
@@ -141,9 +143,9 @@ func (s *source) mapSeries(inst model.ModuleID, r record, l *loaded, implied map
 		implied[e.Ref] = true
 		l.implied = append(l.implied, e)
 	}
-	for metric, p := range points {
-		ref := data.SeriesRef{Entity: e.Ref, Metric: metric}
-		l.points[ref] = append(l.points[ref], p)
+	for _, mp := range points {
+		ref := data.SeriesRef{Entity: e.Ref, Metric: mp.metric}
+		l.points[ref] = append(l.points[ref], mp.p)
 	}
 }
 
@@ -234,27 +236,31 @@ func (m *entityMap) edges(inst model.ModuleID, from model.EntityRef, r record) (
 	return out, nil
 }
 
-// points maps one record to its entity and a point per metric present in it.
-func (m *seriesMap) points(inst model.ModuleID, r record) (model.Entity, map[string]data.Point, error) {
+type metricPoint struct {
+	metric string
+	p      data.Point
+}
+
+// points maps one record to its entity and a point per metric present in it, appended to buf.
+func (m *seriesMap) points(inst model.ModuleID, r record, buf []metricPoint) (model.Entity, []metricPoint, error) {
 	e, err := bareEntity(inst, m.Kind, m.ID, r)
 	if err != nil {
-		return e, nil, err
+		return e, buf, err
 	}
 	at, err := timestamp(r, m.Time)
 	if err != nil {
-		return e, nil, err
+		return e, buf, err
 	}
-	out := make(map[string]data.Point, len(m.Metrics))
 	for name, mm := range m.Metrics {
 		v, ok, err := r.number(mm.Field)
 		if err != nil {
-			return e, nil, err
+			return e, buf[:0], err
 		}
 		if ok {
-			out[name] = data.Point{T: at, V: v}
+			buf = append(buf, metricPoint{name, data.Point{T: at, V: v}})
 		}
 	}
-	return e, out, nil
+	return e, buf, nil
 }
 
 // timestamp reads field as Unix seconds or RFC 3339, returning Unix nanoseconds.
