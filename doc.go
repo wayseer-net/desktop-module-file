@@ -27,6 +27,15 @@
 //	            time: ts                    # RFC 3339, or Unix seconds
 //	            metrics:
 //	              cpu.utilisation: {field: cpu, unit: percent}
+//	        - path: ~/fleet/changes.csv
+//	          events:
+//	            kind: host                  # with id: the entity each event is about
+//	            id: host                    # an empty cell makes a global event
+//	            time: ts
+//	            severity: level             # debug, info, warn, error or critical; default info
+//	            type: what                  # e.g. deploy or alert; default "event"
+//	            message: text               # required
+//	            fields: [version]
 //
 // CSV fields are header names; JSON fields are keys, dotted to reach nested objects. A CSV
 // cell holding several values (tags, edge targets) separates them with ';'; JSON uses arrays.

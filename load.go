@@ -46,6 +46,7 @@ type loaded struct {
 	stamp   stamp
 	ents    []mapped
 	implied []model.Entity // bare entities for series ids
+	events  []model.Event
 	points  map[data.SeriesRef][]data.Point
 	probs   []problem
 	err     error         // the file as a whole could not be used
@@ -75,6 +76,7 @@ func (s *source) load(inst model.ModuleID) loaded {
 	for _, r := range recs {
 		s.mapEntity(inst, r, &l)
 		s.mapSeries(inst, r, &l, implied)
+		s.mapEvent(inst, r, &l)
 	}
 	for ref, ps := range l.points {
 		l.points[ref] = sortPoints(ps)
@@ -113,6 +115,10 @@ func (s *source) fields() []string {
 		for _, mm := range m.Metrics {
 			out = append(out, mm.Field)
 		}
+	}
+	if m := s.Events; m != nil {
+		out = append(out, m.ID, m.Time, m.Severity, m.Type, m.Message)
+		out = append(out, m.Fields...)
 	}
 	return slices.DeleteFunc(out, func(f string) bool { return f == "" })
 }

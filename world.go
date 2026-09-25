@@ -24,6 +24,7 @@ type state struct {
 	ents    map[model.EntityRef]model.Entity
 	edges   map[model.EdgeKey]model.Edge
 	points  map[data.SeriesRef][]data.Point
+	events  []model.Event // oldest first, one per id
 	reports []report
 	err     error // every file-level failure
 }
@@ -53,6 +54,7 @@ func combine(srcs []source, files []loaded) state {
 			}
 		}
 		w.addPoints(l.points)
+		w.events = append(w.events, l.events...)
 		w.reports = append(w.reports, reports(path, probs)...)
 	}
 	for _, l := range files {
@@ -62,6 +64,7 @@ func combine(srcs []source, files []loaded) state {
 			}
 		}
 	}
+	w.events = uniqueEvents(w.events)
 	w.err = errors.Join(errs...)
 	return w
 }
@@ -92,4 +95,15 @@ func reports(path string, probs []problem) []report {
 
 func sortedKeys[K comparable, V any](m map[K]V, compare func(a, b K) int) []K {
 	return slices.SortedFunc(maps.Keys(m), compare)
+}
+
+// uniqueEvents orders events by time and keeps the first of each id.
+func uniqueEvents(evs []model.Event) []model.Event {
+	slices.SortStableFunc(evs, func(a, b model.Event) int { return a.At.Compare(b.At) })
+	seen := make(map[string]bool, len(evs))
+	return slices.DeleteFunc(evs, func(e model.Event) bool {
+		dup := seen[e.ID]
+		seen[e.ID] = true
+		return dup
+	})
 }

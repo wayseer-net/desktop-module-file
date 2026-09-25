@@ -23,13 +23,13 @@ const Kind = "file"
 
 const (
 	version  = "1"
-	eventCap = 1000                  // problem events kept for queries
+	eventCap = 10000                 // events kept for queries
 	settle   = 50 * time.Millisecond // quiet time after a file event before reloading
 )
 
 func init() { module.Register(Kind, func() module.Module { return New() }) }
 
-// Module maps CSV and JSON files to entities, edges and series.
+// Module maps CSV and JSON files to entities, edges, series and events.
 type Module struct {
 	name      model.ModuleID
 	opts      options
@@ -42,6 +42,7 @@ type Module struct {
 	world    state
 	tracker  module.Tracker
 	reported map[string]bool // problems already sent as events
+	sent     map[string]bool // ids of file events already sent
 	events   *module.EventLog
 	seq      uint64 // events sent so far
 }
@@ -51,7 +52,7 @@ func New() *Module { return &Module{} }
 
 // Info describes the module.
 func (m *Module) Info() module.Info {
-	return module.Info{Kind: Kind, Version: version, Description: "Entities, edges and series from CSV and JSON files"}
+	return module.Info{Kind: Kind, Version: version, Description: "Entities, edges, series and events from CSV and JSON files"}
 }
 
 // Configure decodes and checks the mapping; files are read by Run and Discover.
@@ -74,7 +75,7 @@ func (m *Module) Configure(_ context.Context, cfg module.Config) error {
 	m.files = make([]loaded, len(o.Files))
 	m.world = state{}
 	m.tracker.Reset()
-	m.reported, m.events, m.seq = map[string]bool{}, module.NewEventLog(eventCap), 0
+	m.reported, m.sent, m.events, m.seq = map[string]bool{}, map[string]bool{}, module.NewEventLog(eventCap), 0
 	m.health.Store(&data.Health{})
 	return nil
 }
@@ -207,9 +208,9 @@ func (m *Module) reload(force map[string]bool) {
 	m.health.Store(&data.Health{Err: m.world.err})
 }
 
-// newEvents turns problems not reported before into events.
+// newEvents returns the files' events not sent before, then problems not reported before.
 func (m *Module) newEvents(now time.Time) []model.Event {
-	var out []model.Event
+	out := m.unsentFileEvents()
 	current := make(map[string]bool, len(m.world.reports))
 	for _, r := range m.world.reports {
 		current[r.msg] = true
@@ -224,6 +225,20 @@ func (m *Module) newEvents(now time.Time) []model.Event {
 	}
 	m.reported = current
 	m.events.Add(out...)
+	return out
+}
+
+// unsentFileEvents returns events in the files whose ids have not been sent, oldest first.
+func (m *Module) unsentFileEvents() []model.Event {
+	var out []model.Event
+	current := make(map[string]bool, len(m.world.events))
+	for _, e := range m.world.events {
+		current[e.ID] = true
+		if !m.sent[e.ID] {
+			out = append(out, e)
+		}
+	}
+	m.sent = current
 	return out
 }
 
@@ -320,7 +335,7 @@ func thin(ps []data.Point, q data.SeriesQuery) []data.Point {
 	return data.Downsample(ps, q.Window, int(q.Window.Span()/q.Step))
 }
 
-// QueryEvents answers from the problem events sent so far.
+// QueryEvents answers from the events sent so far: the files' and problem reports.
 func (m *Module) QueryEvents(ctx context.Context, q module.EventQuery) ([]model.Event, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

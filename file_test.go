@@ -66,7 +66,7 @@ func TestConformance(t *testing.T) {
 	conformance.Run(t, conformance.Case{
 		New:     func() module.Module { return New() },
 		Name:    "inventory",
-		Options: hostsOptions + strings.TrimPrefix(cpuOptions, "\nfiles:\n"),
+		Options: hostsOptions + strings.TrimPrefix(cpuOptions, "\nfiles:\n") + strings.TrimPrefix(eventsOptions, "\nfiles:\n"),
 		Failing: "files: [{path: /nonexistent/mindseye/hosts.csv, entities: {kind: host, id: hostname}}]",
 	})
 }

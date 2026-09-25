@@ -1,6 +1,7 @@
 package file
 
 import (
+	"cmp"
 	"maps"
 	"mindseye/internal/data"
 	"mindseye/internal/demo"
@@ -9,6 +10,7 @@ import (
 	"mindseye/internal/module"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -61,6 +63,9 @@ func TestDemoWorldLoads(t *testing.T) {
 			t.Errorf("%s links to nothing", e.Ref)
 		}
 	}
+	if n := len(m.world.events); n < 20 {
+		t.Errorf("%d events, want at least 20", n)
+	}
 	if len(m.world.reports) != 0 {
 		t.Errorf("problems loading the demo: %+v", m.world.reports)
 	}
@@ -77,7 +82,8 @@ func TestDemoWorldLoads(t *testing.T) {
 // TestDemoWorldMatchesFiles checks the in-memory demo world against the committed CSVs.
 func TestDemoWorldMatchesFiles(t *testing.T) {
 	t.Chdir("../..")
-	read, err := demoModule(t).Discover(t.Context())
+	m := demoModule(t)
+	read, err := m.Discover(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,6 +112,25 @@ func TestDemoWorldMatchesFiles(t *testing.T) {
 	if len(read.Edges) != len(keys) {
 		t.Errorf("read %d edges, the demo world has %d", len(read.Edges), len(keys))
 	}
+	checkDemoEvents(t, m.world.events, want.Events)
+}
+
+// checkDemoEvents compares events read from the files with the demo world's, ignoring ids.
+func checkDemoEvents(t *testing.T, read, want []model.Event) {
+	t.Helper()
+	if len(read) != len(want) {
+		t.Fatalf("read %d events, the demo world has %d", len(read), len(want))
+	}
+	read, want = slices.SortedStableFunc(slices.Values(read), compareEvents), slices.SortedStableFunc(slices.Values(want), compareEvents)
+	for i := range read {
+		if !sameEvent(read[i], want[i]) {
+			t.Errorf("read event %+v\nwant %+v", read[i], want[i])
+		}
+	}
+}
+
+func compareEvents(a, b model.Event) int {
+	return cmp.Or(a.At.Compare(b.At), strings.Compare(string(a.Entity), string(b.Entity)), strings.Compare(a.Message, b.Message))
 }
 
 // sameEntity compares everything but Seen; attributes by their text, as CSV cells hold them.

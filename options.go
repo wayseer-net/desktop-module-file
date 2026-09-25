@@ -24,6 +24,7 @@ type source struct {
 	Records   string     `yaml:"records"`   // JSON only: dotted path to the array of records
 	Entities  *entityMap `yaml:"entities"`
 	Series    *seriesMap `yaml:"series"`
+	Events    *eventMap  `yaml:"events"`
 
 	abs   string // cleaned absolute path, set by prepare
 	delim rune
@@ -96,10 +97,10 @@ func (s *source) prepare(units map[string]model.Unit) error {
 	if err := s.prepareFormat(); err != nil {
 		return err
 	}
-	if s.Entities == nil && s.Series == nil {
-		return errors.New("maps neither entities nor series")
+	if s.Entities == nil && s.Series == nil && s.Events == nil {
+		return errors.New("maps no entities, series or events")
 	}
-	return errors.Join(s.Entities.validate(), s.Series.validate(units))
+	return errors.Join(s.Entities.validate(), s.Series.validate(units), s.Events.validate())
 }
 
 func (s *source) prepareFormat() error {
