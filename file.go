@@ -42,8 +42,8 @@ type Module struct {
 	world    state
 	tracker  module.Tracker
 	reported map[string]bool // problems already sent as events
-	events   []model.Event   // newest last, at most eventCap
-	seq      uint64          // events sent so far
+	events   *module.EventLog
+	seq      uint64 // events sent so far
 }
 
 // New makes an unconfigured module.
@@ -74,7 +74,7 @@ func (m *Module) Configure(_ context.Context, cfg module.Config) error {
 	m.files = make([]loaded, len(o.Files))
 	m.world = state{}
 	m.tracker.Reset()
-	m.reported, m.events, m.seq = map[string]bool{}, nil, 0
+	m.reported, m.events, m.seq = map[string]bool{}, module.NewEventLog(eventCap), 0
 	m.health.Store(&data.Health{})
 	return nil
 }
@@ -223,10 +223,7 @@ func (m *Module) newEvents(now time.Time) []model.Event {
 		})
 	}
 	m.reported = current
-	m.events = append(m.events, out...)
-	if extra := len(m.events) - eventCap; extra > 0 {
-		m.events = slices.Delete(m.events, 0, extra)
-	}
+	m.events.Add(out...)
 	return out
 }
 
@@ -330,26 +327,7 @@ func (m *Module) QueryEvents(ctx context.Context, q module.EventQuery) ([]model.
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []model.Event
-	for i := len(m.events) - 1; i >= 0 && (q.Limit == 0 || len(out) < q.Limit); i-- {
-		if e := m.events[i]; eventMatches(&e, q) {
-			out = append(out, e)
-		}
-	}
-	slices.Reverse(out)
-	return out, nil
-}
-
-func eventMatches(e *model.Event, q module.EventQuery) bool {
-	switch {
-	case e.Severity < q.MinSeverity:
-		return false
-	case len(q.Entities) > 0 && !slices.Contains(q.Entities, e.Entity):
-		return false
-	case len(q.Kinds) > 0 && !slices.Contains(q.Kinds, e.Kind):
-		return false
-	}
-	return q.Window.From.IsZero() && q.Window.To.IsZero() || q.Window.Contains(e.At.UnixNano())
+	return m.events.Query(q), nil
 }
 
 // Search finds entities whose name or id contains text, ignoring case.

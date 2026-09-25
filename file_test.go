@@ -6,11 +6,11 @@ import (
 	"mindseye/internal/model"
 	"mindseye/internal/module"
 	"mindseye/internal/module/conformance"
+	"mindseye/internal/module/moduletest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -110,7 +110,7 @@ func TestJSONEntitiesFollowRecordsPath(t *testing.T) {
 	}
 	w.wantEdges(t, "service/checkout runs_on host/web-01", "service/checkout runs_on host/web-02",
 		"service/billing runs_on host/db-07")
-	wantProblems(t, runOnce(t, m).events(), "services.json:8: ", "services.json:9: ")
+	wantProblems(t, runOnce(t, m).Events(), "services.json:8: ", "services.json:9: ")
 }
 
 func TestSeriesFromTimestampedRows(t *testing.T) {
@@ -155,12 +155,12 @@ files:
     entities: {kind: host, id: hostname, status: state, attrs: [cores]}
 `)
 	first := runOnce(t, m)
-	if got := natives(first.sets[0].Upserts); !slices.Equal(got, []string{"a", "d"}) {
+	if got := natives(first.Sets()[0].Upserts); !slices.Equal(got, []string{"a", "d"}) {
 		t.Errorf("entities = %v; want the good rows only", got)
 	}
-	wantProblems(t, first.events(), "bad.csv:3: ", "bad.csv:4: ", "bad.csv:5: ")
-	if again := runOnce(t, m); len(again.events()) != 0 {
-		t.Errorf("a restart reported the problems again: %v", again.events())
+	wantProblems(t, first.Events(), "bad.csv:3: ", "bad.csv:4: ", "bad.csv:5: ")
+	if again := runOnce(t, m); len(again.Events()) != 0 {
+		t.Errorf("a restart reported the problems again: %v", again.Events())
 	}
 }
 
@@ -168,11 +168,11 @@ func TestEditSendsOnlyTheChange(t *testing.T) {
 	path := copyFixture(t, "hosts.csv")
 	m := configure(t, strings.ReplaceAll(hostsOptions, fixtures+"hosts.csv", path))
 	sink := runInBackground(t, m)
-	sink.waitFor(t, 1)
+	sink.WaitFor(t, 1)
 	rewrite(t, path, "web-01,Web 01,warn,disk 91% full", "web-01,Web 01,ok,")
 	rewrite(t, path, "\nweb-02,,crit,unreachable,linux,8,false,prod; web,web,db-07;cache-1\n",
 		"\nweb-03,,ok,,linux,4,false,,web,\n")
-	cs := sink.merged(t, func(cs model.ChangeSet) bool { return len(cs.Removes) > 0 && hasUpsert(cs, "web-01") })
+	cs := merged(t, sink, func(cs model.ChangeSet) bool { return len(cs.Removes) > 0 && hasUpsert(cs, "web-01") })
 	if got := natives(cs.Upserts); !slices.Equal(got, []string{"web-01", "web-03"}) {
 		t.Errorf("upserts = %v", got)
 	}
@@ -185,11 +185,11 @@ func TestDeleteRemovesEntitiesAndSurfacesError(t *testing.T) {
 	path := copyFixture(t, "hosts.csv")
 	m := configure(t, strings.ReplaceAll(hostsOptions, fixtures+"hosts.csv", path))
 	sink := runInBackground(t, m)
-	sink.waitFor(t, 1)
+	sink.WaitFor(t, 1)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	cs := sink.merged(t, func(cs model.ChangeSet) bool { return len(cs.Removes) == 3 })
+	cs := merged(t, sink, func(cs model.ChangeSet) bool { return len(cs.Removes) == 3 })
 	if len(cs.Upserts) != 0 {
 		t.Errorf("upserts after delete: %v", natives(cs.Upserts))
 	}
@@ -367,46 +367,13 @@ func rewrite(t *testing.T, path, old, replacement string) {
 	}
 }
 
-// recSink records what a module sends.
-type recSink struct {
-	mu   sync.Mutex
-	sets []model.ChangeSet
-}
-
-func (s *recSink) Snapshot(_ context.Context, cs *model.ChangeSet) error { return s.add(cs) }
-func (s *recSink) Delta(_ context.Context, cs *model.ChangeSet) error    { return s.add(cs) }
-
-func (s *recSink) add(cs *model.ChangeSet) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sets = append(s.sets, *cs)
-	return nil
-}
-
-func (s *recSink) events() []model.Event {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []model.Event
-	for _, cs := range s.sets {
-		out = append(out, cs.Events...)
-	}
-	return out
-}
-
-func (s *recSink) waitFor(t *testing.T, n int) {
-	t.Helper()
-	eventually(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return len(s.sets) >= n })
-}
-
 // merged waits until the deltas after the snapshot, merged, satisfy done, and returns them.
-func (s *recSink) merged(t *testing.T, done func(model.ChangeSet) bool) model.ChangeSet {
+func merged(t *testing.T, s *moduletest.Sink, done func(model.ChangeSet) bool) model.ChangeSet {
 	t.Helper()
 	var cs model.ChangeSet
-	eventually(t, func() bool {
-		s.mu.Lock()
-		defer s.mu.Unlock()
+	moduletest.Eventually(t, func() bool {
 		cs = model.ChangeSet{}
-		for _, d := range s.sets[1:] {
+		for _, d := range s.Sets()[1:] {
 			cs.Removes = append(cs.Removes, d.Removes...)
 			cs.Upserts = append(cs.Upserts, d.Upserts...)
 		}
@@ -416,12 +383,12 @@ func (s *recSink) merged(t *testing.T, done func(model.ChangeSet) bool) model.Ch
 }
 
 // runOnce runs m until its snapshot arrives, then stops it.
-func runOnce(t *testing.T, m *Module) *recSink {
+func runOnce(t *testing.T, m *Module) *moduletest.Sink {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	sink, done := &recSink{}, make(chan error, 1)
+	sink, done := &moduletest.Sink{}, make(chan error, 1)
 	go func() { done <- m.Run(ctx, sink) }()
-	sink.waitFor(t, 1)
+	sink.WaitFor(t, 1)
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
@@ -429,21 +396,7 @@ func runOnce(t *testing.T, m *Module) *recSink {
 	return sink
 }
 
-func runInBackground(t *testing.T, m *Module) *recSink {
+func runInBackground(t *testing.T, m *Module) *moduletest.Sink {
 	t.Helper()
-	ctx, cancel := context.WithCancel(t.Context())
-	sink, done := &recSink{}, make(chan error, 1)
-	go func() { done <- m.Run(ctx, sink) }()
-	t.Cleanup(func() { cancel(); <-done })
-	return sink
-}
-
-// eventually polls cond until it holds or three seconds pass.
-func eventually(t *testing.T, cond func() bool) {
-	t.Helper()
-	for deadline := time.Now().Add(3 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("condition not met in time")
-		}
-	}
+	return moduletest.Run(t, func(ctx context.Context, s *moduletest.Sink) error { return m.Run(ctx, s) })
 }
