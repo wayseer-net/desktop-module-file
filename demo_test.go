@@ -1,11 +1,14 @@
 package file
 
 import (
+	"maps"
 	"mindseye/internal/data"
+	"mindseye/internal/demo"
 	"mindseye/internal/kernel"
 	"mindseye/internal/model"
 	"mindseye/internal/module"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -69,6 +72,47 @@ func TestDemoWorldLoads(t *testing.T) {
 	if err != nil || len(series) != 1 || len(series[0].Points) != 96 {
 		t.Errorf("a day of host CPU: %+v, %v; want 96 points", series, err)
 	}
+}
+
+// TestDemoWorldMatchesFiles checks the in-memory demo world against the committed CSVs.
+func TestDemoWorldMatchesFiles(t *testing.T) {
+	t.Chdir("../..")
+	read, err := demoModule(t).Discover(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := demo.World(1, 1)
+	byRef := map[model.EntityRef]model.Entity{}
+	for _, e := range want.Upserts {
+		byRef[e.Ref] = e
+	}
+	if len(read.Upserts) != len(byRef) {
+		t.Errorf("read %d entities, the demo world has %d", len(read.Upserts), len(byRef))
+	}
+	for _, got := range read.Upserts {
+		if w, ok := byRef[got.Ref]; !ok || !sameEntity(got, w) {
+			t.Errorf("%s: read %+v, want %+v", got.Ref, got, w)
+		}
+	}
+	keys := map[model.EdgeKey]bool{}
+	for _, e := range want.Edges {
+		keys[e.Key()] = true
+	}
+	for _, e := range read.Edges {
+		if !keys[e.Key()] {
+			t.Errorf("read edge %v, not in the demo world", e.Key())
+		}
+	}
+	if len(read.Edges) != len(keys) {
+		t.Errorf("read %d edges, the demo world has %d", len(read.Edges), len(keys))
+	}
+}
+
+// sameEntity compares everything but Seen; attributes by their text, as CSV cells hold them.
+func sameEntity(a, b model.Entity) bool {
+	return a.Ref == b.Ref && a.Kind == b.Kind && a.Name == b.Name && a.Status == b.Status &&
+		a.Source == b.Source && slices.Equal(a.Tags, b.Tags) &&
+		maps.EqualFunc(a.Attrs, b.Attrs, func(x, y model.Value) bool { return x.String() == y.String() })
 }
 
 // BenchmarkDemoLoad times reading and mapping every demo file into a fresh module.
