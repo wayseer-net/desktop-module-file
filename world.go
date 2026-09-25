@@ -8,7 +8,6 @@ import (
 	"mindseye/internal/data"
 	"mindseye/internal/model"
 	"slices"
-	"time"
 )
 
 // problemCap bounds the problems reported per file, so one broken file cannot flood the log.
@@ -91,49 +90,6 @@ func reports(path string, probs []problem) []report {
 	return out
 }
 
-// changes turns the difference between what was sent and w into a change set, and records w
-// as sent.
-func (m *Module) changes(now time.Time) *model.ChangeSet {
-	w := &m.world
-	cs := &model.ChangeSet{}
-	for _, r := range sortedKeys(m.sent, cmp.Compare) {
-		if _, ok := w.ents[r]; !ok {
-			cs.Removes = append(cs.Removes, r)
-			delete(m.sent, r)
-		}
-	}
-	for _, k := range sortedKeys(m.sentEdges, compareEdgeKeys) {
-		if _, ok := w.edges[k]; !ok {
-			cs.RemoveEdges = append(cs.RemoveEdges, k)
-			delete(m.sentEdges, k)
-		}
-	}
-	for _, r := range sortedKeys(w.ents, cmp.Compare) {
-		e := w.ents[r]
-		if old, ok := m.sent[r]; !ok || !sameEntity(&old, &e) {
-			m.sent[r] = e
-			e.Seen = now
-			cs.Upserts = append(cs.Upserts, e)
-		}
-	}
-	for _, k := range sortedKeys(w.edges, compareEdgeKeys) {
-		if _, ok := m.sentEdges[k]; !ok {
-			m.sentEdges[k] = w.edges[k]
-			cs.Edges = append(cs.Edges, w.edges[k])
-		}
-	}
-	return cs
-}
-
-func sameEntity(a, b *model.Entity) bool {
-	return a.Name == b.Name && a.Status == b.Status && slices.Equal(a.Tags, b.Tags) &&
-		maps.EqualFunc(a.Attrs, b.Attrs, model.Value.Equal)
-}
-
 func sortedKeys[K comparable, V any](m map[K]V, compare func(a, b K) int) []K {
 	return slices.SortedFunc(maps.Keys(m), compare)
-}
-
-func compareEdgeKeys(a, b model.EdgeKey) int {
-	return cmp.Or(cmp.Compare(a.From, b.From), cmp.Compare(a.To, b.To), cmp.Compare(a.Rel, b.Rel))
 }

@@ -37,14 +37,13 @@ type Module struct {
 	catalogue []module.Metric
 	health    atomic.Pointer[data.Health]
 
-	mu        sync.Mutex // guards what follows, shared by Run and queries
-	files     []loaded   // parallel to opts.Files
-	world     state
-	sent      map[model.EntityRef]model.Entity // entities as last sent, without Seen
-	sentEdges map[model.EdgeKey]model.Edge
-	reported  map[string]bool // problems already sent as events
-	events    []model.Event   // newest last, at most eventCap
-	seq       uint64          // events sent so far
+	mu       sync.Mutex // guards what follows, shared by Run and queries
+	files    []loaded   // parallel to opts.Files
+	world    state
+	tracker  module.Tracker
+	reported map[string]bool // problems already sent as events
+	events   []model.Event   // newest last, at most eventCap
+	seq      uint64          // events sent so far
 }
 
 // New makes an unconfigured module.
@@ -74,7 +73,7 @@ func (m *Module) Configure(_ context.Context, cfg module.Config) error {
 	m.catalogue = catalogue(o.Files)
 	m.files = make([]loaded, len(o.Files))
 	m.world = state{}
-	m.sent, m.sentEdges = map[model.EntityRef]model.Entity{}, map[model.EdgeKey]model.Edge{}
+	m.tracker.Reset()
 	m.reported, m.events, m.seq = map[string]bool{}, nil, 0
 	m.health.Store(&data.Health{})
 	return nil
@@ -116,8 +115,7 @@ func (m *Module) Run(ctx context.Context, sink module.Sink) error {
 	}
 	m.watchDirs(w)
 	m.mu.Lock()
-	clear(m.sent) // a snapshot resends everything
-	clear(m.sentEdges)
+	m.tracker.Reset() // a snapshot resends everything
 	m.mu.Unlock()
 	if err := sink.Snapshot(ctx, m.refresh(time.Now(), nil)); err != nil {
 		return err
@@ -186,7 +184,7 @@ func (m *Module) refresh(now time.Time, force map[string]bool) *model.ChangeSet 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reload(force)
-	cs := m.changes(now)
+	cs := m.tracker.Changes(m.world.ents, m.world.edges, now)
 	cs.Events = m.newEvents(now)
 	return cs
 }
@@ -255,7 +253,7 @@ func (m *Module) Discover(ctx context.Context) (*model.ChangeSet, error) {
 		e.Seen = now
 		cs.Upserts = append(cs.Upserts, e)
 	}
-	for _, k := range sortedKeys(m.world.edges, compareEdgeKeys) {
+	for _, k := range sortedKeys(m.world.edges, module.CompareEdgeKeys) {
 		cs.Edges = append(cs.Edges, m.world.edges[k])
 	}
 	return cs, nil
