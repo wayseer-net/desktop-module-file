@@ -138,6 +138,7 @@ func (m *Module) follow(ctx context.Context, sink module.Sink, w *fsnotify.Watch
 	touched := map[string]bool{}
 	for {
 		var cs *model.ChangeSet
+		read := false // a good rescan is sent even when nothing changed, so the data stays fresh
 		select {
 		case <-ctx.Done():
 			return nil
@@ -159,8 +160,9 @@ func (m *Module) follow(ctx context.Context, sink module.Sink, w *fsnotify.Watch
 		case now := <-rescan.C:
 			m.watchDirs(w)
 			cs = m.refresh(now, nil)
+			read = m.Health().Err == nil
 		}
-		if !cs.Empty() {
+		if read || !cs.Empty() {
 			if err := sink.Delta(ctx, cs); err != nil {
 				return err
 			}

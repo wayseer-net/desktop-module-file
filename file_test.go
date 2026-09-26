@@ -400,3 +400,14 @@ func runInBackground(t *testing.T, m *Module) *moduletest.Sink {
 	t.Helper()
 	return moduletest.Run(t, func(ctx context.Context, s *moduletest.Sink) error { return m.Run(ctx, s) })
 }
+
+func TestUnchangedFilesAreStillSentEachRescan(t *testing.T) {
+	m := configure(t, hostsOptions+"rescan: 100ms\n")
+	sink := runInBackground(t, m)
+	sink.WaitFor(t, 3)
+	for i, cs := range sink.Sets()[1:] {
+		if !cs.Empty() {
+			t.Errorf("delta %d of unchanged files = %+v, want empty", i, cs)
+		}
+	}
+}
