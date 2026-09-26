@@ -15,7 +15,8 @@ import (
 	"time"
 )
 
-// demoModule configures the demo profile's file module, from the repository root.
+// demoModule configures the demo profile's file module, from the repository root, with the
+// recording's own times so they compare with the generator's.
 func demoModule(tb testing.TB) *Module {
 	tb.Helper()
 	src, err := os.ReadFile("testdata/demo/config.yaml")
@@ -38,7 +39,12 @@ func demoModule(tb testing.TB) *Module {
 	if err != nil || len(insts) != 1 {
 		tb.Fatalf("built %d file modules: %v", len(insts), err)
 	}
-	return insts[0].Module.(*Module)
+	m := insts[0].Module.(*Module)
+	if !m.opts.Replay {
+		tb.Error("the demo profile should replay its recording up to now")
+	}
+	m.opts.Replay = false
+	return m
 }
 
 func TestDemoWorldLoads(t *testing.T) {

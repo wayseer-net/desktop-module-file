@@ -8,6 +8,7 @@ import (
 	"mindseye/internal/data"
 	"mindseye/internal/model"
 	"slices"
+	"time"
 )
 
 // problemCap bounds the problems reported per file, so one broken file cannot flood the log.
@@ -106,4 +107,33 @@ func uniqueEvents(evs []model.Event) []model.Event {
 		seen[e.ID] = true
 		return dup
 	})
+}
+
+// newest is the latest sample or event time, false if there are none.
+func (w *state) newest() (time.Time, bool) {
+	var t int64
+	found := false
+	for _, ps := range w.points {
+		if n := len(ps); n > 0 && (!found || ps[n-1].T > t) {
+			t, found = ps[n-1].T, true
+		}
+	}
+	if n := len(w.events); n > 0 && (!found || w.events[n-1].At.UnixNano() > t) {
+		t, found = w.events[n-1].At.UnixNano(), true
+	}
+	return time.Unix(0, t).UTC(), found
+}
+
+// move shifts every sample and event by d, copying so the files' loaded times stay as read.
+func (w *state) move(d time.Duration) {
+	for ref, ps := range w.points {
+		moved := make([]data.Point, len(ps))
+		for i, p := range ps {
+			moved[i] = data.Point{T: p.T + int64(d), V: p.V}
+		}
+		w.points[ref] = moved
+	}
+	for i := range w.events {
+		w.events[i].At = w.events[i].At.Add(d)
+	}
 }

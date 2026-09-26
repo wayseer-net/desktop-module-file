@@ -14,6 +14,7 @@ import (
 type options struct {
 	Files  []source      `yaml:"files"`
 	Rescan time.Duration `yaml:"rescan"` // how often to check files the watcher may have missed
+	Replay bool          `yaml:"replay"` // move recorded times so the newest is when first loaded
 }
 
 // source is one file and how its records map to the world.

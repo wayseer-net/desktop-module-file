@@ -5,6 +5,7 @@
 //	  - kind: file
 //	    name: inventory
 //	    options:
+//	      replay: false                     # true moves recorded times so the newest is now
 //	      files:
 //	        - path: ~/fleet/hosts.csv       # format from the extension: .csv, .tsv or .json
 //	          entities:
@@ -41,5 +42,6 @@
 // cell holding several values (tags, edge targets) separates them with ';'; JSON uses arrays.
 // Series ids with no entity of their own become bare entities. Malformed rows are skipped and
 // reported once as warning events naming the file and line; a missing or unreadable file shows
-// in Health, and its entities are removed.
+// in Health, and its entities are removed. Replay suits recordings and demos: every sample and
+// event moves by one amount, fixed when the files are first loaded, so the newest lands then.
 package file

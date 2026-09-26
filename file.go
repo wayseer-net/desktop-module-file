@@ -45,10 +45,12 @@ type Module struct {
 	sent     map[string]bool // ids of file events already sent
 	events   *module.EventLog
 	seq      uint64 // events sent so far
+	now      func() time.Time
+	shift    *time.Duration // how far replay moves recorded times, fixed at the first load
 }
 
 // New makes an unconfigured module.
-func New() *Module { return &Module{} }
+func New() *Module { return &Module{now: time.Now} }
 
 // Info describes the module.
 func (m *Module) Info() module.Info {
@@ -76,6 +78,7 @@ func (m *Module) Configure(_ context.Context, cfg module.Config) error {
 	m.world = state{}
 	m.tracker.Reset()
 	m.reported, m.sent, m.events, m.seq = map[string]bool{}, map[string]bool{}, module.NewEventLog(eventCap), 0
+	m.shift = nil
 	m.health.Store(&data.Health{})
 	return nil
 }
@@ -207,7 +210,23 @@ func (m *Module) reload(force map[string]bool) {
 		return
 	}
 	m.world = combine(m.opts.Files, m.files)
+	if m.opts.Replay {
+		m.replay()
+	}
 	m.health.Store(&data.Health{Err: m.world.err})
+}
+
+// replay moves the world's times so the newest lands when the files were first loaded.
+func (m *Module) replay() {
+	if m.shift == nil {
+		newest, ok := m.world.newest()
+		if !ok {
+			return
+		}
+		d := m.now().Sub(newest)
+		m.shift = &d
+	}
+	m.world.move(*m.shift)
 }
 
 // newEvents returns the files' events not sent before, then problems not reported before.
