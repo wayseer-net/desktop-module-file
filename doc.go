@@ -42,6 +42,8 @@
 // cell holding several values (tags, edge targets) separates them with ';'; JSON uses arrays.
 // Series ids with no entity of their own become bare entities. Malformed rows are skipped and
 // reported once as warning events naming the file and line; a missing or unreadable file shows
-// in Health, and its entities are removed. Replay suits recordings and demos: every sample and
-// event moves by one amount, fixed when the files are first loaded, so the newest lands then.
+// in Health, and its entities are removed. A metric's unit is one of bytes, bytes_per_second,
+// bits, bits_per_second, percent, ratio (0 to 1), seconds, count or per_second; none shows the
+// number as it is. Replay suits recordings and demos: every sample and event moves by one
+// amount, fixed when the files are first loaded, so the newest lands then.
 package file

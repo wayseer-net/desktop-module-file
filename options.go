@@ -177,6 +177,9 @@ func (m *seriesMap) validate(units map[string]model.Unit) error {
 		if name == "" || mm.Field == "" {
 			errs = append(errs, fmt.Errorf("series: metric %q needs a name and a field", name))
 		}
+		if err := mm.Unit.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("series: metric %s: %w", name, err))
+		}
 	}
 	return errors.Join(errs...)
 }

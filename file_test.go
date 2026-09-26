@@ -209,6 +209,7 @@ func TestBadOptionsRejected(t *testing.T) {
 		"files: [{path: x.csv, delimiter: ab, entities: {kind: host, id: a}}]",
 		"files: [{path: x.csv, entities: {kind: host, id: a, edges: [{rel: Bad, to: b, kind: host}]}}]",
 		"files: [{path: x.csv, series: {kind: host, id: a, time: t}}]", // no metrics
+		"files: [{path: x.csv, series: {kind: host, id: a, time: t, metrics: {cpu: {field: c, unit: pct}}}}]",
 		"files: [{path: x.csv, entities: {kind: host, id: a}}, {path: x.csv, entities: {kind: host, id: a}}]",
 		"files: [{path: x.csv, entities: {kind: host, id: a}}]\nrescan: 1ms",
 	} {
