@@ -5,9 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"mindseye/internal/data"
-	"mindseye/internal/model"
-	"mindseye/internal/module"
+	"mindseye/pkg/sdk"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -27,23 +25,23 @@ const (
 	settle   = 50 * time.Millisecond // quiet time after a file event before reloading
 )
 
-func init() { module.Register(Kind, func() module.Module { return New() }) }
+func init() { sdk.Register(Kind, func() sdk.Module { return New() }) }
 
 // Module maps CSV and JSON files to entities, edges, series and events.
 type Module struct {
-	name      model.ModuleID
+	name      sdk.ModuleID
 	opts      options
 	paths     map[string]bool // absolute paths of the files, for matching watcher events
-	catalogue []module.Metric
-	health    atomic.Pointer[data.Health]
+	catalogue []sdk.Metric
+	health    atomic.Pointer[sdk.Health]
 
 	mu       sync.Mutex // guards what follows, shared by Run and queries
 	files    []loaded   // parallel to opts.Files
 	world    state
-	tracker  module.Tracker
+	tracker  sdk.Tracker
 	reported map[string]bool // problems already sent as events
 	sent     map[string]bool // ids of file events already sent
-	events   *module.EventLog
+	events   *sdk.EventLog
 	seq      uint64 // events sent so far
 	now      func() time.Time
 	shift    *time.Duration // how far replay moves recorded times, fixed at the first load
@@ -53,12 +51,12 @@ type Module struct {
 func New() *Module { return &Module{now: time.Now} }
 
 // Info describes the module.
-func (m *Module) Info() module.Info {
-	return module.Info{Kind: Kind, Version: version, Description: "Entities, edges, series and events from CSV and JSON files"}
+func (m *Module) Info() sdk.Info {
+	return sdk.Info{Kind: Kind, Version: version, Description: "Entities, edges, series and events from CSV and JSON files"}
 }
 
 // Configure decodes and checks the mapping; files are read by Run and Discover.
-func (m *Module) Configure(_ context.Context, cfg module.Config) error {
+func (m *Module) Configure(_ context.Context, cfg sdk.Config) error {
 	o := options{Rescan: 5 * time.Second}
 	if err := cfg.Decode(&o); err != nil {
 		return err
@@ -77,15 +75,15 @@ func (m *Module) Configure(_ context.Context, cfg module.Config) error {
 	m.files = make([]loaded, len(o.Files))
 	m.world = state{}
 	m.tracker.Reset()
-	m.reported, m.sent, m.events, m.seq = map[string]bool{}, map[string]bool{}, module.NewEventLog(eventCap), 0
+	m.reported, m.sent, m.events, m.seq = map[string]bool{}, map[string]bool{}, sdk.NewEventLog(eventCap), 0
 	m.shift = nil
-	m.health.Store(&data.Health{})
+	m.health.Store(&sdk.Health{})
 	return nil
 }
 
 // catalogue lists each mapped metric with the kinds that have it.
-func catalogue(srcs []source) []module.Metric {
-	byName := map[string]*module.Metric{}
+func catalogue(srcs []source) []sdk.Metric {
+	byName := map[string]*sdk.Metric{}
 	for _, s := range srcs {
 		if s.Series == nil {
 			continue
@@ -93,7 +91,7 @@ func catalogue(srcs []source) []module.Metric {
 		for name, mm := range s.Series.Metrics {
 			c := byName[name]
 			if c == nil {
-				c = &module.Metric{Name: name, Unit: mm.Unit, Description: "read from " + s.Path, Native: mm.Field}
+				c = &sdk.Metric{Name: name, Unit: mm.Unit, Description: "read from " + s.Path, Native: mm.Field}
 				byName[name] = c
 			}
 			if !slices.Contains(c.Kinds, s.Series.Kind) {
@@ -101,16 +99,16 @@ func catalogue(srcs []source) []module.Metric {
 			}
 		}
 	}
-	out := make([]module.Metric, 0, len(byName))
+	out := make([]sdk.Metric, 0, len(byName))
 	for _, c := range byName {
 		out = append(out, *c)
 	}
-	slices.SortFunc(out, func(a, b module.Metric) int { return cmp.Compare(a.Name, b.Name) })
+	slices.SortFunc(out, func(a, b sdk.Metric) int { return cmp.Compare(a.Name, b.Name) })
 	return out
 }
 
 // Run sends a snapshot, then a delta whenever a file changes, until ctx ends.
-func (m *Module) Run(ctx context.Context, sink module.Sink) error {
+func (m *Module) Run(ctx context.Context, sink sdk.Sink) error {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
 		w = nil // the rescan still notices changes, only later
@@ -128,7 +126,7 @@ func (m *Module) Run(ctx context.Context, sink module.Sink) error {
 }
 
 // follow sends deltas as files change: soon after a watcher event, and at every rescan.
-func (m *Module) follow(ctx context.Context, sink module.Sink, w *fsnotify.Watcher) error {
+func (m *Module) follow(ctx context.Context, sink sdk.Sink, w *fsnotify.Watcher) error {
 	var events <-chan fsnotify.Event
 	var errs <-chan error
 	if w != nil {
@@ -140,7 +138,7 @@ func (m *Module) follow(ctx context.Context, sink module.Sink, w *fsnotify.Watch
 	defer rescan.Stop()
 	touched := map[string]bool{}
 	for {
-		var cs *model.ChangeSet
+		var cs *sdk.ChangeSet
 		read := false // a good rescan is sent even when nothing changed, so the data stays fresh
 		select {
 		case <-ctx.Done():
@@ -186,7 +184,7 @@ func (m *Module) watchDirs(w *fsnotify.Watcher) {
 
 // refresh rereads changed files and returns what changed since the last send. Files in force
 // are reread even if their size and time look the same.
-func (m *Module) refresh(now time.Time, force map[string]bool) *model.ChangeSet {
+func (m *Module) refresh(now time.Time, force map[string]bool) *sdk.ChangeSet {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reload(force)
@@ -213,7 +211,7 @@ func (m *Module) reload(force map[string]bool) {
 	if m.opts.Replay {
 		m.replay()
 	}
-	m.health.Store(&data.Health{Err: m.world.err})
+	m.health.Store(&sdk.Health{Err: m.world.err})
 }
 
 // replay moves the world's times so the newest lands when the files were first loaded.
@@ -230,7 +228,7 @@ func (m *Module) replay() {
 }
 
 // newEvents returns the files' events not sent before, then problems not reported before.
-func (m *Module) newEvents(now time.Time) []model.Event {
+func (m *Module) newEvents(now time.Time) []sdk.Event {
 	out := m.unsentFileEvents()
 	current := make(map[string]bool, len(m.world.reports))
 	for _, r := range m.world.reports {
@@ -239,7 +237,7 @@ func (m *Module) newEvents(now time.Time) []model.Event {
 			continue
 		}
 		m.seq++
-		out = append(out, model.Event{
+		out = append(out, sdk.Event{
 			ID: fmt.Sprintf("problem-%d", m.seq), At: now, Severity: r.sev,
 			Kind: "problem", Message: r.msg, Source: m.name,
 		})
@@ -250,8 +248,8 @@ func (m *Module) newEvents(now time.Time) []model.Event {
 }
 
 // unsentFileEvents returns events in the files whose ids have not been sent, oldest first.
-func (m *Module) unsentFileEvents() []model.Event {
-	var out []model.Event
+func (m *Module) unsentFileEvents() []sdk.Event {
+	var out []sdk.Event
 	current := make(map[string]bool, len(m.world.events))
 	for _, e := range m.world.events {
 		current[e.ID] = true
@@ -264,15 +262,15 @@ func (m *Module) unsentFileEvents() []model.Event {
 }
 
 // Health reports files that are missing or unusable.
-func (m *Module) Health() data.Health {
+func (m *Module) Health() sdk.Health {
 	if h := m.health.Load(); h != nil {
 		return *h
 	}
-	return data.Health{}
+	return sdk.Health{}
 }
 
 // Discover returns the files' whole world without changing what Run has sent.
-func (m *Module) Discover(ctx context.Context) (*model.ChangeSet, error) {
+func (m *Module) Discover(ctx context.Context) (*sdk.ChangeSet, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -280,44 +278,44 @@ func (m *Module) Discover(ctx context.Context) (*model.ChangeSet, error) {
 	defer m.mu.Unlock()
 	m.reload(nil)
 	now := time.Now()
-	cs := &model.ChangeSet{}
+	cs := &sdk.ChangeSet{}
 	for _, r := range sortedKeys(m.world.ents, cmp.Compare) {
 		e := m.world.ents[r]
 		e.Seen = now
 		cs.Upserts = append(cs.Upserts, e)
 	}
-	for _, k := range sortedKeys(m.world.edges, module.CompareEdgeKeys) {
+	for _, k := range sortedKeys(m.world.edges, sdk.CompareEdgeKeys) {
 		cs.Edges = append(cs.Edges, m.world.edges[k])
 	}
 	return cs, nil
 }
 
 // Metrics lists the series the mapping reads.
-func (m *Module) Metrics() []module.Metric { return slices.Clone(m.catalogue) }
+func (m *Module) Metrics() []sdk.Metric { return slices.Clone(m.catalogue) }
 
 // QuerySeries answers from the points last read, thinned to about one point per step.
-func (m *Module) QuerySeries(ctx context.Context, q data.SeriesQuery) ([]data.Series, error) {
+func (m *Module) QuerySeries(ctx context.Context, q sdk.SeriesQuery) ([]sdk.Series, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []data.Series
+	var out []sdk.Series
 	for _, e := range m.matching(q) {
 		for _, name := range q.Metrics {
-			ref := data.SeriesRef{Entity: e.Ref, Metric: name}
+			ref := sdk.SeriesRef{Entity: e.Ref, Metric: name}
 			ps, ok := m.world.points[ref]
 			if !ok {
 				continue
 			}
-			out = append(out, data.Series{Ref: ref, Unit: m.unit(name), Points: thin(within(ps, q.Window), q)})
+			out = append(out, sdk.Series{Ref: ref, Unit: m.unit(name), Points: thin(within(ps, q.Window), q)})
 		}
 	}
 	return out, nil
 }
 
-func (m *Module) matching(q data.SeriesQuery) []model.Entity {
-	var out []model.Entity
+func (m *Module) matching(q sdk.SeriesQuery) []sdk.Entity {
+	var out []sdk.Entity
 	if len(q.Entities) > 0 {
 		for _, r := range q.Entities {
 			if e, ok := m.world.ents[r]; ok {
@@ -334,30 +332,30 @@ func (m *Module) matching(q data.SeriesQuery) []model.Entity {
 	return out
 }
 
-func (m *Module) unit(metric string) model.Unit {
-	i := slices.IndexFunc(m.catalogue, func(c module.Metric) bool { return c.Name == metric })
+func (m *Module) unit(metric string) sdk.Unit {
+	i := slices.IndexFunc(m.catalogue, func(c sdk.Metric) bool { return c.Name == metric })
 	if i < 0 {
-		return model.UnitNone
+		return sdk.UnitNone
 	}
 	return m.catalogue[i].Unit
 }
 
 // within returns the points of sorted ps inside w, sharing ps's memory.
-func within(ps []data.Point, w data.TimeWindow) []data.Point {
-	from, _ := slices.BinarySearchFunc(ps, w.From.UnixNano(), func(p data.Point, t int64) int { return cmp.Compare(p.T, t) })
-	to, _ := slices.BinarySearchFunc(ps, w.To.UnixNano(), func(p data.Point, t int64) int { return cmp.Compare(p.T, t) })
+func within(ps []sdk.Point, w sdk.TimeWindow) []sdk.Point {
+	from, _ := slices.BinarySearchFunc(ps, w.From.UnixNano(), func(p sdk.Point, t int64) int { return cmp.Compare(p.T, t) })
+	to, _ := slices.BinarySearchFunc(ps, w.To.UnixNano(), func(p sdk.Point, t int64) int { return cmp.Compare(p.T, t) })
 	return ps[from:to]
 }
 
-func thin(ps []data.Point, q data.SeriesQuery) []data.Point {
+func thin(ps []sdk.Point, q sdk.SeriesQuery) []sdk.Point {
 	if q.Step <= 0 {
 		return slices.Clone(ps)
 	}
-	return data.Downsample(ps, q.Window, int(q.Window.Span()/q.Step))
+	return sdk.Downsample(ps, q.Window, int(q.Window.Span()/q.Step))
 }
 
 // QueryEvents answers from the events sent so far: the files' and problem reports.
-func (m *Module) QueryEvents(ctx context.Context, q module.EventQuery) ([]model.Event, error) {
+func (m *Module) QueryEvents(ctx context.Context, q sdk.EventQuery) ([]sdk.Event, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -367,7 +365,7 @@ func (m *Module) QueryEvents(ctx context.Context, q module.EventQuery) ([]model.
 }
 
 // Search finds entities whose name or id contains text, ignoring case.
-func (m *Module) Search(ctx context.Context, text string, limit int) ([]model.EntityRef, error) {
+func (m *Module) Search(ctx context.Context, text string, limit int) ([]sdk.EntityRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -377,7 +375,7 @@ func (m *Module) Search(ctx context.Context, text string, limit int) ([]model.En
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	text = strings.ToLower(text)
-	var out []model.EntityRef
+	var out []sdk.EntityRef
 	for _, r := range sortedKeys(m.world.ents, cmp.Compare) {
 		e := m.world.ents[r]
 		if len(out) < limit && (strings.Contains(strings.ToLower(e.Name), text) || strings.Contains(strings.ToLower(r.Native()), text)) {

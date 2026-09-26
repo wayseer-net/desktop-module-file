@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"strings"
 )
 
@@ -49,13 +49,13 @@ func readCSV(src []byte, delim rune) (cols []string, recs []record, probs []prob
 }
 
 func csvRecord(index map[string]int, row []string, line int) record {
-	return record{line: line, text: true, get: func(field string) (model.Value, bool) {
+	return record{line: line, text: true, get: func(field string) (sdk.Value, bool) {
 		i, ok := index[field]
 		if !ok {
-			return model.Value{}, false
+			return sdk.Value{}, false
 		}
 		cell := strings.TrimSpace(row[i])
-		return model.String(cell), cell != ""
+		return sdk.String(cell), cell != ""
 	}}
 }
 
@@ -140,7 +140,7 @@ func lineAt(src []byte, off int64) int {
 }
 
 func jsonRecord(obj map[string]any, line int) record {
-	return record{line: line, get: func(field string) (model.Value, bool) { return jsonValue(lookup(obj, field)) }}
+	return record{line: line, get: func(field string) (sdk.Value, bool) { return jsonValue(lookup(obj, field)) }}
 }
 
 // lookup finds field as a key, or else by following its dots through nested objects.

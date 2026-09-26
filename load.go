@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
-	"mindseye/internal/data"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"os"
 	"slices"
 	"strconv"
@@ -35,8 +34,8 @@ func statFile(path string) (stamp, error) {
 
 // mapped is one record's entity and edges.
 type mapped struct {
-	ent   model.Entity
-	edges []model.Edge
+	ent   sdk.Entity
+	edges []sdk.Edge
 	line  int
 }
 
@@ -45,18 +44,18 @@ type loaded struct {
 	read    bool
 	stamp   stamp
 	ents    []mapped
-	implied []model.Entity // bare entities for series ids
-	events  []model.Event
-	points  map[data.SeriesRef][]data.Point
+	implied []sdk.Entity // bare entities for series ids
+	events  []sdk.Event
+	points  map[sdk.SeriesRef][]sdk.Point
 	probs   []problem
 	err     error         // the file as a whole could not be used
 	scratch []metricPoint // one record's points, reused across records
 }
 
 // load reads and maps the file; a file-level failure leaves it contributing nothing.
-func (s *source) load(inst model.ModuleID) loaded {
+func (s *source) load(inst sdk.ModuleID) loaded {
 	st, err := statFile(s.abs)
-	l := loaded{read: true, stamp: st, points: map[data.SeriesRef][]data.Point{}}
+	l := loaded{read: true, stamp: st, points: map[sdk.SeriesRef][]sdk.Point{}}
 	var src []byte
 	if err == nil {
 		src, err = os.ReadFile(s.abs)
@@ -72,7 +71,7 @@ func (s *source) load(inst model.ModuleID) loaded {
 		l.err = err
 		return l
 	}
-	implied := map[model.EntityRef]bool{}
+	implied := map[sdk.EntityRef]bool{}
 	for _, r := range recs {
 		s.mapEntity(inst, r, &l)
 		s.mapSeries(inst, r, &l, implied)
@@ -123,7 +122,7 @@ func (s *source) fields() []string {
 	return slices.DeleteFunc(out, func(f string) bool { return f == "" })
 }
 
-func (s *source) mapEntity(inst model.ModuleID, r record, l *loaded) {
+func (s *source) mapEntity(inst sdk.ModuleID, r record, l *loaded) {
 	if s.Entities == nil {
 		return
 	}
@@ -135,7 +134,7 @@ func (s *source) mapEntity(inst model.ModuleID, r record, l *loaded) {
 	l.ents = append(l.ents, mapped{ent: e, edges: edges, line: r.line})
 }
 
-func (s *source) mapSeries(inst model.ModuleID, r record, l *loaded, implied map[model.EntityRef]bool) {
+func (s *source) mapSeries(inst sdk.ModuleID, r record, l *loaded, implied map[sdk.EntityRef]bool) {
 	if s.Series == nil {
 		return
 	}
@@ -150,13 +149,13 @@ func (s *source) mapSeries(inst model.ModuleID, r record, l *loaded, implied map
 		l.implied = append(l.implied, e)
 	}
 	for _, mp := range points {
-		ref := data.SeriesRef{Entity: e.Ref, Metric: mp.metric}
+		ref := sdk.SeriesRef{Entity: e.Ref, Metric: mp.metric}
 		l.points[ref] = append(l.points[ref], mp.p)
 	}
 }
 
 // entity maps one record; any bad field rejects the whole record.
-func (m *entityMap) entity(inst model.ModuleID, r record) (model.Entity, []model.Edge, error) {
+func (m *entityMap) entity(inst sdk.ModuleID, r record) (sdk.Entity, []sdk.Edge, error) {
 	e, err := bareEntity(inst, m.Kind, m.ID, r)
 	if err != nil {
 		return e, nil, err
@@ -174,46 +173,46 @@ func (m *entityMap) entity(inst model.ModuleID, r record) (model.Entity, []model
 	return e, edges, nil
 }
 
-func bareEntity(inst model.ModuleID, kind model.Kind, idField string, r record) (model.Entity, error) {
+func bareEntity(inst sdk.ModuleID, kind sdk.Kind, idField string, r record) (sdk.Entity, error) {
 	id, err := r.str(idField)
 	switch {
 	case err != nil:
-		return model.Entity{}, fmt.Errorf("%s: %w", idField, err)
+		return sdk.Entity{}, fmt.Errorf("%s: %w", idField, err)
 	case id == "":
-		return model.Entity{}, fmt.Errorf("empty %s", idField)
+		return sdk.Entity{}, fmt.Errorf("empty %s", idField)
 	}
-	ref, err := model.NewEntityRef(string(inst), kind, id)
+	ref, err := sdk.NewEntityRef(string(inst), kind, id)
 	if err != nil {
-		return model.Entity{}, err
+		return sdk.Entity{}, err
 	}
-	return model.Entity{Ref: ref, Kind: kind, Name: id, Source: inst}, nil
+	return sdk.Entity{Ref: ref, Kind: kind, Name: id, Source: inst}, nil
 }
 
-var statusLevels = map[string]model.StatusLevel{
-	"": model.StatusUnknown, "unknown": model.StatusUnknown, "ok": model.StatusOK,
-	"warn": model.StatusWarn, "warning": model.StatusWarn,
-	"crit": model.StatusCrit, "critical": model.StatusCrit, "down": model.StatusDown,
+var statusLevels = map[string]sdk.StatusLevel{
+	"": sdk.StatusUnknown, "unknown": sdk.StatusUnknown, "ok": sdk.StatusOK,
+	"warn": sdk.StatusWarn, "warning": sdk.StatusWarn,
+	"crit": sdk.StatusCrit, "critical": sdk.StatusCrit, "down": sdk.StatusDown,
 }
 
-func status(r record, levelField, reasonField string) (model.Status, error) {
+func status(r record, levelField, reasonField string) (sdk.Status, error) {
 	s, err := r.str(levelField)
 	if err != nil {
-		return model.Status{}, fmt.Errorf("%s: %w", levelField, err)
+		return sdk.Status{}, fmt.Errorf("%s: %w", levelField, err)
 	}
 	lvl, ok := statusLevels[strings.ToLower(s)]
 	if !ok {
-		return model.Status{}, fmt.Errorf("%s %q (want ok, warn, crit, down or unknown)", levelField, s)
+		return sdk.Status{}, fmt.Errorf("%s %q (want ok, warn, crit, down or unknown)", levelField, s)
 	}
 	reason, _ := r.str(reasonField)
-	return model.Status{Level: lvl, Reason: reason}, nil
+	return sdk.Status{Level: lvl, Reason: reason}, nil
 }
 
-func attrs(r record, fields []string) map[string]model.Value {
-	var out map[string]model.Value
+func attrs(r record, fields []string) map[string]sdk.Value {
+	var out map[string]sdk.Value
 	for _, f := range fields {
 		if v, ok := r.attr(f); ok {
 			if out == nil {
-				out = make(map[string]model.Value, len(fields))
+				out = make(map[string]sdk.Value, len(fields))
 			}
 			out[f] = v
 		}
@@ -221,22 +220,22 @@ func attrs(r record, fields []string) map[string]model.Value {
 	return out
 }
 
-func (m *entityMap) edges(inst model.ModuleID, from model.EntityRef, r record) ([]model.Edge, error) {
-	var out []model.Edge
+func (m *entityMap) edges(inst sdk.ModuleID, from sdk.EntityRef, r record) ([]sdk.Edge, error) {
+	var out []sdk.Edge
 	for _, ed := range m.Edges {
 		targets, err := r.list(ed.To)
 		if err != nil {
 			return nil, err
 		}
 		for _, t := range targets {
-			to, err := model.NewEntityRef(string(inst), ed.Kind, t)
+			to, err := sdk.NewEntityRef(string(inst), ed.Kind, t)
 			if err != nil {
 				return nil, err
 			}
 			if to == from {
 				return nil, fmt.Errorf("%s: %s relates to itself", ed.To, t)
 			}
-			out = append(out, model.Edge{From: from, To: to, Rel: ed.Rel, Weight: 1, Source: inst})
+			out = append(out, sdk.Edge{From: from, To: to, Rel: ed.Rel, Weight: 1, Source: inst})
 		}
 	}
 	return out, nil
@@ -244,11 +243,11 @@ func (m *entityMap) edges(inst model.ModuleID, from model.EntityRef, r record) (
 
 type metricPoint struct {
 	metric string
-	p      data.Point
+	p      sdk.Point
 }
 
 // points maps one record to its entity and a point per metric present in it, appended to buf.
-func (m *seriesMap) points(inst model.ModuleID, r record, buf []metricPoint) (model.Entity, []metricPoint, error) {
+func (m *seriesMap) points(inst sdk.ModuleID, r record, buf []metricPoint) (sdk.Entity, []metricPoint, error) {
 	e, err := bareEntity(inst, m.Kind, m.ID, r)
 	if err != nil {
 		return e, buf, err
@@ -263,7 +262,7 @@ func (m *seriesMap) points(inst model.ModuleID, r record, buf []metricPoint) (mo
 			return e, buf[:0], err
 		}
 		if ok {
-			buf = append(buf, metricPoint{name, data.Point{T: at, V: v}})
+			buf = append(buf, metricPoint{name, sdk.Point{T: at, V: v}})
 		}
 	}
 	return e, buf, nil
@@ -290,8 +289,8 @@ func timestamp(r record, field string) (int64, error) {
 }
 
 // sortPoints orders points by time; of points at the same time, the last one wins.
-func sortPoints(ps []data.Point) []data.Point {
-	slices.SortStableFunc(ps, func(a, b data.Point) int { return cmp.Compare(a.T, b.T) })
+func sortPoints(ps []sdk.Point) []sdk.Point {
+	slices.SortStableFunc(ps, func(a, b sdk.Point) int { return cmp.Compare(a.T, b.T) })
 	out := ps[:0]
 	for _, p := range ps {
 		if n := len(out); n > 0 && out[n-1].T == p.T {

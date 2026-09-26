@@ -3,7 +3,7 @@ package file
 import (
 	"errors"
 	"fmt"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,33 +32,33 @@ type source struct {
 }
 
 type entityMap struct {
-	Kind   model.Kind `yaml:"kind"`
-	ID     string     `yaml:"id"`
-	Name   string     `yaml:"name"`
-	Status string     `yaml:"status"`
-	Reason string     `yaml:"reason"`
-	Attrs  []string   `yaml:"attrs"`
-	Tags   string     `yaml:"tags"`
-	Edges  []edgeMap  `yaml:"edges"`
+	Kind   sdk.Kind  `yaml:"kind"`
+	ID     string    `yaml:"id"`
+	Name   string    `yaml:"name"`
+	Status string    `yaml:"status"`
+	Reason string    `yaml:"reason"`
+	Attrs  []string  `yaml:"attrs"`
+	Tags   string    `yaml:"tags"`
+	Edges  []edgeMap `yaml:"edges"`
 }
 
 // edgeMap makes an edge from each record to the entities of Kind whose ids are in field To.
 type edgeMap struct {
-	Rel  model.Relation `yaml:"rel"`
-	To   string         `yaml:"to"`
-	Kind model.Kind     `yaml:"kind"`
+	Rel  sdk.Relation `yaml:"rel"`
+	To   string       `yaml:"to"`
+	Kind sdk.Kind     `yaml:"kind"`
 }
 
 type seriesMap struct {
-	Kind    model.Kind           `yaml:"kind"`
+	Kind    sdk.Kind             `yaml:"kind"`
 	ID      string               `yaml:"id"`
 	Time    string               `yaml:"time"`
 	Metrics map[string]metricMap `yaml:"metrics"` // canonical metric name → its field
 }
 
 type metricMap struct {
-	Field string     `yaml:"field"`
-	Unit  model.Unit `yaml:"unit"`
+	Field string   `yaml:"field"`
+	Unit  sdk.Unit `yaml:"unit"`
 }
 
 const minRescan = 100 * time.Millisecond
@@ -72,7 +72,7 @@ func (o *options) prepare() error {
 		return fmt.Errorf("rescan %v is below %v", o.Rescan, minRescan)
 	}
 	seen := map[string]bool{}
-	units := map[string]model.Unit{}
+	units := map[string]sdk.Unit{}
 	for i := range o.Files {
 		s := &o.Files[i]
 		if err := s.prepare(units); err != nil {
@@ -86,7 +86,7 @@ func (o *options) prepare() error {
 	return nil
 }
 
-func (s *source) prepare(units map[string]model.Unit) error {
+func (s *source) prepare(units map[string]sdk.Unit) error {
 	if s.Path == "" {
 		return errors.New("empty path")
 	}
@@ -158,7 +158,7 @@ func (e *entityMap) validate() error {
 	return errors.Join(errs...)
 }
 
-func (m *seriesMap) validate(units map[string]model.Unit) error {
+func (m *seriesMap) validate(units map[string]sdk.Unit) error {
 	if m == nil {
 		return nil
 	}
@@ -184,7 +184,7 @@ func (m *seriesMap) validate(units map[string]model.Unit) error {
 	return errors.Join(errs...)
 }
 
-func validKindAndID(what string, k model.Kind, id string) error {
+func validKindAndID(what string, k sdk.Kind, id string) error {
 	if id == "" {
 		return fmt.Errorf("%s: empty id", what)
 	}

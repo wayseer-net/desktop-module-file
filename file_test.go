@@ -2,11 +2,8 @@ package file
 
 import (
 	"context"
-	"mindseye/internal/data"
-	"mindseye/internal/model"
-	"mindseye/internal/module"
-	"mindseye/internal/module/conformance"
-	"mindseye/internal/module/moduletest"
+	"mindseye/pkg/sdk"
+	"mindseye/pkg/sdk/sdktest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -63,8 +60,8 @@ files:
 `
 
 func TestConformance(t *testing.T) {
-	conformance.Run(t, conformance.Case{
-		New:     func() module.Module { return New() },
+	sdktest.Conform(t, sdktest.Case{
+		New:     func() sdk.Module { return New() },
 		Name:    "inventory",
 		Options: hostsOptions + strings.TrimPrefix(cpuOptions, "\nfiles:\n") + strings.TrimPrefix(eventsOptions, "\nfiles:\n"),
 		Failing: "files: [{path: /nonexistent/mindseye/hosts.csv, entities: {kind: host, id: hostname}}]",
@@ -74,20 +71,20 @@ func TestConformance(t *testing.T) {
 func TestCSVEntitiesMapColumns(t *testing.T) {
 	w := discover(t, hostsOptions)
 	web2 := w.entity(t, "host", "web-02")
-	if web2.Name != "web-02" || web2.Status != (model.Status{Level: model.StatusCrit, Reason: "unreachable"}) {
+	if web2.Name != "web-02" || web2.Status != (sdk.Status{Level: sdk.StatusCrit, Reason: "unreachable"}) {
 		t.Errorf("web-02 = %+v; want its id as name and crit status", web2)
 	}
 	if !slices.Equal(web2.Tags, []string{"prod", "web"}) {
 		t.Errorf("tags = %q", web2.Tags)
 	}
 	db := w.entity(t, "host", "db-07")
-	want := map[string]model.Value{"os": model.String("linux"), "cores": model.Number(16), "ssd": model.Bool(true)}
+	want := map[string]sdk.Value{"os": sdk.String("linux"), "cores": sdk.Number(16), "ssd": sdk.Bool(true)}
 	for k, v := range want {
 		if !db.Attrs[k].Equal(v) {
 			t.Errorf("db-07 %s = %v, want %v", k, db.Attrs[k], v)
 		}
 	}
-	if db.Name != "Database 07" || db.Status.Level != model.StatusOK {
+	if db.Name != "Database 07" || db.Status.Level != sdk.StatusOK {
 		t.Errorf("db-07 = %+v", db)
 	}
 	w.wantEdges(t,
@@ -102,10 +99,10 @@ func TestJSONEntitiesFollowRecordsPath(t *testing.T) {
 		t.Fatalf("services = %v; bad records should be skipped", got)
 	}
 	co := w.entity(t, "service", "checkout")
-	if !co.Attrs["meta.replicas"].Equal(model.Number(3)) || !co.Attrs["meta.owner"].Equal(model.String("web")) {
+	if !co.Attrs["meta.replicas"].Equal(sdk.Number(3)) || !co.Attrs["meta.owner"].Equal(sdk.String("web")) {
 		t.Errorf("checkout attrs = %v", co.Attrs)
 	}
-	if b := w.entity(t, "service", "billing"); b.Status.Level != model.StatusDown || !slices.Equal(b.Tags, []string{"pci"}) {
+	if b := w.entity(t, "service", "billing"); b.Status.Level != sdk.StatusDown || !slices.Equal(b.Tags, []string{"pci"}) {
 		t.Errorf("billing = %+v", b)
 	}
 	w.wantEdges(t, "service/checkout runs_on host/web-01", "service/checkout runs_on host/web-02",
@@ -120,16 +117,16 @@ func TestSeriesFromTimestampedRows(t *testing.T) {
 		t.Fatalf("implied entities = %v", got)
 	}
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
-	q := data.SeriesQuery{
-		Entities: []model.EntityRef{ref("host", "db-07"), ref("host", "cache-1")},
+	q := sdk.SeriesQuery{
+		Entities: []sdk.EntityRef{ref("host", "db-07"), ref("host", "cache-1")},
 		Metrics:  []string{"cpu.utilisation", "memory.utilisation"},
-		Window:   data.TimeWindow{From: start, To: start.Add(time.Hour)},
+		Window:   sdk.TimeWindow{From: start, To: start.Add(time.Hour)},
 	}
 	got, err := m.QuerySeries(t.Context(), q)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[data.SeriesRef][]float64{
+	want := map[sdk.SeriesRef][]float64{
 		{Entity: ref("host", "db-07"), Metric: "cpu.utilisation"}:      {12.5, 13, 14},
 		{Entity: ref("host", "db-07"), Metric: "memory.utilisation"}:   {50, 52},
 		{Entity: ref("host", "cache-1"), Metric: "cpu.utilisation"}:    {3},
@@ -139,7 +136,7 @@ func TestSeriesFromTimestampedRows(t *testing.T) {
 		t.Fatalf("%d series, want %d: %+v", len(got), len(want), got)
 	}
 	for _, s := range got {
-		if !slices.Equal(values(s.Points), want[s.Ref]) || s.Unit != model.UnitPercent {
+		if !slices.Equal(values(s.Points), want[s.Ref]) || s.Unit != sdk.UnitPercent {
 			t.Errorf("%v = %v %s, want %v", s.Ref, values(s.Points), s.Unit, want[s.Ref])
 		}
 	}
@@ -172,11 +169,11 @@ func TestEditSendsOnlyTheChange(t *testing.T) {
 	rewrite(t, path, "web-01,Web 01,warn,disk 91% full", "web-01,Web 01,ok,")
 	rewrite(t, path, "\nweb-02,,crit,unreachable,linux,8,false,prod; web,web,db-07;cache-1\n",
 		"\nweb-03,,ok,,linux,4,false,,web,\n")
-	cs := merged(t, sink, func(cs model.ChangeSet) bool { return len(cs.Removes) > 0 && hasUpsert(cs, "web-01") })
+	cs := merged(t, sink, func(cs sdk.ChangeSet) bool { return len(cs.Removes) > 0 && hasUpsert(cs, "web-01") })
 	if got := natives(cs.Upserts); !slices.Equal(got, []string{"web-01", "web-03"}) {
 		t.Errorf("upserts = %v", got)
 	}
-	if !slices.Equal(cs.Removes, []model.EntityRef{ref("host", "web-02")}) {
+	if !slices.Equal(cs.Removes, []sdk.EntityRef{ref("host", "web-02")}) {
 		t.Errorf("removes = %v", cs.Removes)
 	}
 }
@@ -189,7 +186,7 @@ func TestDeleteRemovesEntitiesAndSurfacesError(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	cs := merged(t, sink, func(cs model.ChangeSet) bool { return len(cs.Removes) == 3 })
+	cs := merged(t, sink, func(cs sdk.ChangeSet) bool { return len(cs.Removes) == 3 })
 	if len(cs.Upserts) != 0 {
 		t.Errorf("upserts after delete: %v", natives(cs.Upserts))
 	}
@@ -221,21 +218,21 @@ func TestBadOptionsRejected(t *testing.T) {
 
 // helpers
 
-func ref(kind model.Kind, native string) model.EntityRef {
-	r, err := model.NewEntityRef("inventory", kind, native)
+func ref(kind sdk.Kind, native string) sdk.EntityRef {
+	r, err := sdk.NewEntityRef("inventory", kind, native)
 	if err != nil {
 		panic(err)
 	}
 	return r
 }
 
-func config(t *testing.T, options string) module.Config {
+func config(t *testing.T, options string) sdk.Config {
 	t.Helper()
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(options), &doc); err != nil {
 		t.Fatal(err)
 	}
-	c := module.Config{Name: "inventory", Line: 1}
+	c := sdk.Config{Name: "inventory", Line: 1}
 	if len(doc.Content) > 0 {
 		c.Options = *doc.Content[0]
 	}
@@ -252,7 +249,7 @@ func configure(t *testing.T, options string) *Module {
 }
 
 type world struct {
-	ents  map[model.EntityRef]model.Entity
+	ents  map[sdk.EntityRef]sdk.Entity
 	edges []string
 }
 
@@ -264,7 +261,7 @@ func discoverWith(t *testing.T, m *Module) world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := world{ents: map[model.EntityRef]model.Entity{}}
+	w := world{ents: map[sdk.EntityRef]sdk.Entity{}}
 	for _, e := range cs.Upserts {
 		w.ents[e.Ref] = e
 	}
@@ -275,7 +272,7 @@ func discoverWith(t *testing.T, m *Module) world {
 	return w
 }
 
-func (w world) entity(t *testing.T, kind model.Kind, native string) model.Entity {
+func (w world) entity(t *testing.T, kind sdk.Kind, native string) sdk.Entity {
 	t.Helper()
 	e, ok := w.ents[ref(kind, native)]
 	if !ok {
@@ -302,7 +299,7 @@ func (w world) wantEdges(t *testing.T, want ...string) {
 	}
 }
 
-func natives(ents []model.Entity) []string {
+func natives(ents []sdk.Entity) []string {
 	var out []string
 	for _, e := range ents {
 		out = append(out, e.Ref.Native())
@@ -311,11 +308,11 @@ func natives(ents []model.Entity) []string {
 	return out
 }
 
-func hasUpsert(cs model.ChangeSet, native string) bool {
+func hasUpsert(cs sdk.ChangeSet, native string) bool {
 	return slices.Contains(natives(cs.Upserts), native)
 }
 
-func values(ps []data.Point) []float64 {
+func values(ps []sdk.Point) []float64 {
 	var out []float64
 	for _, p := range ps {
 		out = append(out, p.V)
@@ -324,13 +321,13 @@ func values(ps []data.Point) []float64 {
 }
 
 // wantProblems requires one warning event per prefix, in order, from the module's source.
-func wantProblems(t *testing.T, evs []model.Event, prefixes ...string) {
+func wantProblems(t *testing.T, evs []sdk.Event, prefixes ...string) {
 	t.Helper()
 	if len(evs) != len(prefixes) {
 		t.Fatalf("%d problem events, want %d: %+v", len(evs), len(prefixes), evs)
 	}
 	for i, e := range evs {
-		if !strings.Contains(e.Message, prefixes[i]) || e.Severity != model.SevWarn || e.Source != "inventory" {
+		if !strings.Contains(e.Message, prefixes[i]) || e.Severity != sdk.SevWarn || e.Source != "inventory" {
 			t.Errorf("event %d = %+v, want a warning containing %q", i, e, prefixes[i])
 		}
 	}
@@ -369,11 +366,11 @@ func rewrite(t *testing.T, path, old, replacement string) {
 }
 
 // merged waits until the deltas after the snapshot, merged, satisfy done, and returns them.
-func merged(t *testing.T, s *moduletest.Sink, done func(model.ChangeSet) bool) model.ChangeSet {
+func merged(t *testing.T, s *sdktest.Sink, done func(sdk.ChangeSet) bool) sdk.ChangeSet {
 	t.Helper()
-	var cs model.ChangeSet
-	moduletest.Eventually(t, func() bool {
-		cs = model.ChangeSet{}
+	var cs sdk.ChangeSet
+	sdktest.Eventually(t, func() bool {
+		cs = sdk.ChangeSet{}
 		for _, d := range s.Sets()[1:] {
 			cs.Removes = append(cs.Removes, d.Removes...)
 			cs.Upserts = append(cs.Upserts, d.Upserts...)
@@ -384,10 +381,10 @@ func merged(t *testing.T, s *moduletest.Sink, done func(model.ChangeSet) bool) m
 }
 
 // runOnce runs m until its snapshot arrives, then stops it.
-func runOnce(t *testing.T, m *Module) *moduletest.Sink {
+func runOnce(t *testing.T, m *Module) *sdktest.Sink {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	sink, done := &moduletest.Sink{}, make(chan error, 1)
+	sink, done := &sdktest.Sink{}, make(chan error, 1)
 	go func() { done <- m.Run(ctx, sink) }()
 	sink.WaitFor(t, 1)
 	cancel()
@@ -397,9 +394,9 @@ func runOnce(t *testing.T, m *Module) *moduletest.Sink {
 	return sink
 }
 
-func runInBackground(t *testing.T, m *Module) *moduletest.Sink {
+func runInBackground(t *testing.T, m *Module) *sdktest.Sink {
 	t.Helper()
-	return moduletest.Run(t, func(ctx context.Context, s *moduletest.Sink) error { return m.Run(ctx, s) })
+	return sdktest.Run(t, func(ctx context.Context, s *sdktest.Sink) error { return m.Run(ctx, s) })
 }
 
 func TestUnchangedFilesAreStillSentEachRescan(t *testing.T) {

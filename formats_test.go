@@ -2,7 +2,7 @@ package file
 
 import (
 	"fmt"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"strings"
 	"testing"
 )
@@ -19,7 +19,7 @@ func TestReadJSONTopLevelArrayWithLines(t *testing.T) {
 	if len(probs) != 1 || probs[0].line != 3 {
 		t.Errorf("problems = %+v; want the non-object on line 3", probs)
 	}
-	if v, _ := recs[0].get("n"); !v.Equal(model.Number(1)) {
+	if v, _ := recs[0].get("n"); !v.Equal(sdk.Number(1)) {
 		t.Errorf("n = %v", v)
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"strconv"
 	"strings"
 )
@@ -14,7 +14,7 @@ import (
 type record struct {
 	line int
 	text bool // values are CSV cells, so attributes infer numbers and booleans
-	get  func(field string) (model.Value, bool)
+	get  func(field string) (sdk.Value, bool)
 }
 
 // problem is a malformed record, or a whole file that could not be used when line is 0.
@@ -37,7 +37,7 @@ func (r record) str(field string) (string, error) {
 }
 
 // attr reads field as an attribute value, inferring the type of CSV text.
-func (r record) attr(field string) (model.Value, bool) {
+func (r record) attr(field string) (sdk.Value, bool) {
 	v, ok := r.get(field)
 	if ok && r.text {
 		return infer(v.Str()), true
@@ -53,7 +53,7 @@ func (r record) list(field string) ([]string, error) {
 		return nil, nil
 	case r.text:
 		return splitCell(v.Str()), nil
-	case v.Type() != model.TypeList:
+	case v.Type() != sdk.TypeList:
 		s, err := text(v)
 		return []string{s}, err
 	}
@@ -74,9 +74,9 @@ func (r record) number(field string) (f float64, ok bool, err error) {
 	switch {
 	case !ok:
 		return 0, false, nil
-	case v.Type() == model.TypeNumber:
+	case v.Type() == sdk.TypeNumber:
 		f = v.Num()
-	case v.Type() == model.TypeString:
+	case v.Type() == sdk.TypeString:
 		if f, err = strconv.ParseFloat(strings.TrimSpace(v.Str()), 64); err != nil {
 			return 0, true, fmt.Errorf("%s: %q is not a number", field, v.Str())
 		}
@@ -91,29 +91,29 @@ func (r record) number(field string) (f float64, ok bool, err error) {
 
 var errNotText = errors.New("a list is not a single value")
 
-func text(v model.Value) (string, error) {
+func text(v sdk.Value) (string, error) {
 	switch v.Type() {
-	case model.TypeString:
+	case sdk.TypeString:
 		return v.Str(), nil
-	case model.TypeNumber:
+	case sdk.TypeNumber:
 		return strconv.FormatFloat(v.Num(), 'f', -1, 64), nil
-	case model.TypeBool:
+	case sdk.TypeBool:
 		return strconv.FormatBool(v.Bool()), nil
 	}
 	return "", errNotText
 }
 
-func infer(s string) model.Value {
+func infer(s string) sdk.Value {
 	if f, err := strconv.ParseFloat(s, 64); err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
-		return model.Number(f)
+		return sdk.Number(f)
 	}
 	switch strings.ToLower(s) {
 	case "true":
-		return model.Bool(true)
+		return sdk.Bool(true)
 	case "false":
-		return model.Bool(false)
+		return sdk.Bool(false)
 	}
-	return model.String(s)
+	return sdk.String(s)
 }
 
 func splitCell(s string) []string {
@@ -127,25 +127,25 @@ func splitCell(s string) []string {
 }
 
 // jsonValue converts decoded JSON; nested objects become their compact JSON text.
-func jsonValue(v any) (model.Value, bool) {
+func jsonValue(v any) (sdk.Value, bool) {
 	switch x := v.(type) {
 	case string:
-		return model.String(x), true
+		return sdk.String(x), true
 	case float64:
-		return model.Number(x), true
+		return sdk.Number(x), true
 	case bool:
-		return model.Bool(x), true
+		return sdk.Bool(x), true
 	case []any:
-		out := make([]model.Value, 0, len(x))
+		out := make([]sdk.Value, 0, len(x))
 		for _, item := range x {
 			if iv, ok := jsonValue(item); ok {
 				out = append(out, iv)
 			}
 		}
-		return model.List(out...), true
+		return sdk.List(out...), true
 	case map[string]any:
 		b, _ := json.Marshal(x) // cannot fail: it was decoded from JSON
-		return model.String(string(b)), true
+		return sdk.String(string(b)), true
 	}
-	return model.Value{}, false
+	return sdk.Value{}, false
 }

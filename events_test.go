@@ -1,9 +1,7 @@
 package file
 
 import (
-	"mindseye/internal/data"
-	"mindseye/internal/model"
-	"mindseye/internal/module"
+	"mindseye/pkg/sdk"
 	"slices"
 	"strings"
 	"testing"
@@ -26,13 +24,13 @@ files:
 func TestCSVEventsMapColumns(t *testing.T) {
 	evs := fileEvents(runOnce(t, configure(t, eventsOptions)).Events())
 	at := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
-	want := []model.Event{
+	want := []sdk.Event{
 		{
-			Entity: ref("host", "web-01"), At: at, Severity: model.SevInfo, Kind: "deploy", Message: "deployed 1.4",
-			Fields: map[string]model.Value{"version": model.Number(1.4)},
+			Entity: ref("host", "web-01"), At: at, Severity: sdk.SevInfo, Kind: "deploy", Message: "deployed 1.4",
+			Fields: map[string]sdk.Value{"version": sdk.Number(1.4)},
 		},
-		{Entity: ref("host", "web-02"), At: at.Add(5 * time.Minute), Severity: model.SevCritical, Kind: "alert", Message: "unreachable"},
-		{At: at.Add(10 * time.Minute), Severity: model.SevWarn, Kind: "event", Message: "maintenance window opens"},
+		{Entity: ref("host", "web-02"), At: at.Add(5 * time.Minute), Severity: sdk.SevCritical, Kind: "alert", Message: "unreachable"},
+		{At: at.Add(10 * time.Minute), Severity: sdk.SevWarn, Kind: "event", Message: "maintenance window opens"},
 	}
 	if len(evs) != len(want) {
 		t.Fatalf("%d events, want %d (the repeated row once): %+v", len(evs), len(want), evs)
@@ -47,7 +45,7 @@ func TestCSVEventsMapColumns(t *testing.T) {
 
 func TestBadEventRowsAreReported(t *testing.T) {
 	sink := runOnce(t, configure(t, eventsOptions))
-	var probs []model.Event
+	var probs []sdk.Event
 	for _, e := range sink.Events() {
 		if e.Kind == "problem" {
 			probs = append(probs, e)
@@ -70,7 +68,7 @@ func TestEventsAreSentOnce(t *testing.T) {
 func TestEventIDsAreStableAcrossInstances(t *testing.T) {
 	a := fileEvents(runOnce(t, configure(t, eventsOptions)).Events())
 	b := fileEvents(runOnce(t, configure(t, eventsOptions)).Events())
-	ids := func(evs []model.Event) []string {
+	ids := func(evs []sdk.Event) []string {
 		var out []string
 		for _, e := range evs {
 			out = append(out, e.ID)
@@ -86,7 +84,7 @@ func TestQueryEventsAnswersFromFileEvents(t *testing.T) {
 	m := configure(t, eventsOptions)
 	runOnce(t, m)
 	from := time.Date(2026, 9, 1, 10, 1, 0, 0, time.UTC)
-	got, err := m.QueryEvents(t.Context(), module.EventQuery{Window: data.TimeWindow{From: from, To: from.Add(time.Hour)}})
+	got, err := m.QueryEvents(t.Context(), sdk.EventQuery{Window: sdk.TimeWindow{From: from, To: from.Add(time.Hour)}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,18 +120,18 @@ func TestBadEventOptionsNameTheFile(t *testing.T) {
 }
 
 // fileEvents drops the module's problem reports.
-func fileEvents(evs []model.Event) []model.Event {
-	return slices.DeleteFunc(slices.Clone(evs), func(e model.Event) bool { return e.Kind == "problem" })
+func fileEvents(evs []sdk.Event) []sdk.Event {
+	return slices.DeleteFunc(slices.Clone(evs), func(e sdk.Event) bool { return e.Kind == "problem" })
 }
 
 // sameEvent compares everything but the ID.
-func sameEvent(got, want model.Event) bool {
+func sameEvent(got, want sdk.Event) bool {
 	return got.Entity == want.Entity && got.At.Equal(want.At) && got.Severity == want.Severity &&
 		got.Kind == want.Kind && got.Message == want.Message && got.Source == want.Source &&
 		attrsMatch(got.Fields, want.Fields)
 }
 
-func attrsMatch(a, b map[string]model.Value) bool {
+func attrsMatch(a, b map[string]sdk.Value) bool {
 	if len(a) != len(b) {
 		return false
 	}

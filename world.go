@@ -5,8 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"mindseye/internal/data"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"slices"
 	"time"
 )
@@ -16,30 +15,30 @@ const problemCap = 20
 
 // report is one problem as an event will carry it.
 type report struct {
-	sev model.Severity
+	sev sdk.Severity
 	msg string
 }
 
 // state is the world all files describe together.
 type state struct {
-	ents    map[model.EntityRef]model.Entity
-	edges   map[model.EdgeKey]model.Edge
-	points  map[data.SeriesRef][]data.Point
-	events  []model.Event // oldest first, one per id
+	ents    map[sdk.EntityRef]sdk.Entity
+	edges   map[sdk.EdgeKey]sdk.Edge
+	points  map[sdk.SeriesRef][]sdk.Point
+	events  []sdk.Event // oldest first, one per id
 	reports []report
 	err     error // every file-level failure
 }
 
 // combine merges the files in config order; an entity id seen twice keeps its first record.
 func combine(srcs []source, files []loaded) state {
-	w := state{ents: map[model.EntityRef]model.Entity{}, edges: map[model.EdgeKey]model.Edge{}, points: map[data.SeriesRef][]data.Point{}}
-	first := map[model.EntityRef]string{}
+	w := state{ents: map[sdk.EntityRef]sdk.Entity{}, edges: map[sdk.EdgeKey]sdk.Edge{}, points: map[sdk.SeriesRef][]sdk.Point{}}
+	first := map[sdk.EntityRef]string{}
 	var errs []error
 	for i, l := range files {
 		path := srcs[i].Path
 		if l.err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", path, l.err))
-			w.reports = append(w.reports, report{model.SevError, fmt.Sprintf("%s: %v", path, l.err)})
+			w.reports = append(w.reports, report{sdk.SevError, fmt.Sprintf("%s: %v", path, l.err)})
 			continue
 		}
 		probs := slices.Clone(l.probs)
@@ -70,7 +69,7 @@ func combine(srcs []source, files []loaded) state {
 	return w
 }
 
-func (w *state) addPoints(from map[data.SeriesRef][]data.Point) {
+func (w *state) addPoints(from map[sdk.SeriesRef][]sdk.Point) {
 	for ref, ps := range from {
 		if have, ok := w.points[ref]; ok {
 			w.points[ref] = sortPoints(append(slices.Clone(have), ps...))
@@ -86,10 +85,10 @@ func reports(path string, probs []problem) []report {
 	var out []report
 	for i, p := range probs {
 		if i == problemCap {
-			out = append(out, report{model.SevWarn, fmt.Sprintf("%s: %d more problems not shown", path, len(probs)-i)})
+			out = append(out, report{sdk.SevWarn, fmt.Sprintf("%s: %d more problems not shown", path, len(probs)-i)})
 			break
 		}
-		out = append(out, report{model.SevWarn, fmt.Sprintf("%s:%d: %s", path, p.line, p.msg)})
+		out = append(out, report{sdk.SevWarn, fmt.Sprintf("%s:%d: %s", path, p.line, p.msg)})
 	}
 	return out
 }
@@ -99,10 +98,10 @@ func sortedKeys[K comparable, V any](m map[K]V, compare func(a, b K) int) []K {
 }
 
 // uniqueEvents orders events by time and keeps the first of each id.
-func uniqueEvents(evs []model.Event) []model.Event {
-	slices.SortStableFunc(evs, func(a, b model.Event) int { return a.At.Compare(b.At) })
+func uniqueEvents(evs []sdk.Event) []sdk.Event {
+	slices.SortStableFunc(evs, func(a, b sdk.Event) int { return a.At.Compare(b.At) })
 	seen := make(map[string]bool, len(evs))
-	return slices.DeleteFunc(evs, func(e model.Event) bool {
+	return slices.DeleteFunc(evs, func(e sdk.Event) bool {
 		dup := seen[e.ID]
 		seen[e.ID] = true
 		return dup
@@ -127,9 +126,9 @@ func (w *state) newest() (time.Time, bool) {
 // move shifts every sample and event by d, copying so the files' loaded times stay as read.
 func (w *state) move(d time.Duration) {
 	for ref, ps := range w.points {
-		moved := make([]data.Point, len(ps))
+		moved := make([]sdk.Point, len(ps))
 		for i, p := range ps {
-			moved[i] = data.Point{T: p.T + int64(d), V: p.V}
+			moved[i] = sdk.Point{T: p.T + int64(d), V: p.V}
 		}
 		w.points[ref] = moved
 	}

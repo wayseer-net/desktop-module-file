@@ -1,8 +1,7 @@
 package file
 
 import (
-	"mindseye/internal/data"
-	"mindseye/internal/model"
+	"mindseye/pkg/sdk"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +23,7 @@ func recording(t *testing.T, replay bool, now time.Time) *Module {
 func newest(t *testing.T, m *Module) (sample, event time.Time) {
 	t.Helper()
 	sink := runOnce(t, m)
-	q := data.SeriesQuery{Entities: []model.EntityRef{ref("host", "db-07")}, Metrics: []string{"cpu.utilisation"}, Window: data.TimeWindow{From: time.Unix(0, 0), To: time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)}}
+	q := sdk.SeriesQuery{Entities: []sdk.EntityRef{ref("host", "db-07")}, Metrics: []string{"cpu.utilisation"}, Window: sdk.TimeWindow{From: time.Unix(0, 0), To: time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)}}
 	ss, err := m.QuerySeries(t.Context(), q)
 	if err != nil || len(ss) != 1 {
 		t.Fatalf("query: %v, %d series", err, len(ss))

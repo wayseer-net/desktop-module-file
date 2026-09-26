@@ -1,45 +1,44 @@
 package file
 
 import (
-	"cmp"
-	"maps"
-	"mindseye/internal/data"
-	"mindseye/internal/demo"
-	"mindseye/internal/kernel"
-	"mindseye/internal/model"
-	"mindseye/internal/module"
+	"mindseye/pkg/sdk"
 	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
+
+	"go.yaml.in/yaml/v3"
 )
 
+// demoEntry is a module entry in the demo profile's config.
+type demoEntry struct {
+	Kind    string       `yaml:"kind"`
+	Name    sdk.ModuleID `yaml:"name"`
+	Options yaml.Node    `yaml:"options"`
+}
+
 // demoModule configures the demo profile's file module, from the repository root, with the
-// recording's own times so they compare with the generator's.
+// recording's own times.
 func demoModule(tb testing.TB) *Module {
 	tb.Helper()
 	src, err := os.ReadFile("testdata/demo/config.yaml")
 	if err != nil {
 		tb.Fatal(err)
 	}
-	cfg, err := kernel.ParseConfig(src)
-	if err != nil {
+	var cfg struct {
+		Modules []demoEntry `yaml:"modules"`
+	}
+	if err := yaml.Unmarshal(src, &cfg); err != nil {
 		tb.Fatal(err)
 	}
-	var reg module.Registry
-	reg.Register(Kind, func() module.Module { return New() })
-	var files []kernel.ModuleConfig
-	for _, mc := range cfg.Modules {
-		if mc.Kind == Kind {
-			files = append(files, mc)
-		}
+	i := slices.IndexFunc(cfg.Modules, func(mc demoEntry) bool { return mc.Kind == Kind })
+	if i < 0 {
+		tb.Fatal("the demo profile has no file module")
 	}
-	insts, err := module.Build(tb.Context(), &reg, files)
-	if err != nil || len(insts) != 1 {
-		tb.Fatalf("built %d file modules: %v", len(insts), err)
+	m := New()
+	if err := m.Configure(tb.Context(), sdk.Config{Name: cfg.Modules[i].Name, Options: cfg.Modules[i].Options}); err != nil {
+		tb.Fatal(err)
 	}
-	m := insts[0].Module.(*Module)
 	if !m.opts.Replay {
 		tb.Error("the demo profile should replay its recording up to now")
 	}
@@ -60,12 +59,12 @@ func TestDemoWorldLoads(t *testing.T) {
 	if n := len(cs.Upserts); n < 1800 || n > 2200 {
 		t.Errorf("%d entities, want about 2000", n)
 	}
-	linked := map[model.EntityRef]bool{}
+	linked := map[sdk.EntityRef]bool{}
 	for _, e := range cs.Edges {
 		linked[e.From] = true
 	}
 	for _, e := range cs.Upserts {
-		if !linked[e.Ref] && e.Kind != model.KindCluster && e.Kind != model.KindTeam {
+		if !linked[e.Ref] && e.Kind != sdk.KindCluster && e.Kind != sdk.KindTeam {
 			t.Errorf("%s links to nothing", e.Ref)
 		}
 	}
@@ -75,75 +74,14 @@ func TestDemoWorldLoads(t *testing.T) {
 	if len(m.world.reports) != 0 {
 		t.Errorf("problems loading the demo: %+v", m.world.reports)
 	}
-	host, _ := model.NewEntityRef("demo", model.KindHost, "ams1-db-001")
-	series, err := m.QuerySeries(t.Context(), data.SeriesQuery{
-		Entities: []model.EntityRef{host}, Metrics: []string{"cpu.utilisation"},
-		Window: data.TimeWindow{From: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
+	host, _ := sdk.NewEntityRef("demo", sdk.KindHost, "ams1-db-001")
+	series, err := m.QuerySeries(t.Context(), sdk.SeriesQuery{
+		Entities: []sdk.EntityRef{host}, Metrics: []string{"cpu.utilisation"},
+		Window: sdk.TimeWindow{From: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
 	})
 	if err != nil || len(series) != 1 || len(series[0].Points) != 96 {
 		t.Errorf("a day of host CPU: %+v, %v; want 96 points", series, err)
 	}
-}
-
-// TestDemoWorldMatchesFiles checks the in-memory demo world against the committed CSVs.
-func TestDemoWorldMatchesFiles(t *testing.T) {
-	t.Chdir("../..")
-	m := demoModule(t)
-	read, err := m.Discover(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := demo.World(1, 1)
-	byRef := map[model.EntityRef]model.Entity{}
-	for _, e := range want.Upserts {
-		byRef[e.Ref] = e
-	}
-	if len(read.Upserts) != len(byRef) {
-		t.Errorf("read %d entities, the demo world has %d", len(read.Upserts), len(byRef))
-	}
-	for _, got := range read.Upserts {
-		if w, ok := byRef[got.Ref]; !ok || !sameEntity(got, w) {
-			t.Errorf("%s: read %+v, want %+v", got.Ref, got, w)
-		}
-	}
-	keys := map[model.EdgeKey]bool{}
-	for _, e := range want.Edges {
-		keys[e.Key()] = true
-	}
-	for _, e := range read.Edges {
-		if !keys[e.Key()] {
-			t.Errorf("read edge %v, not in the demo world", e.Key())
-		}
-	}
-	if len(read.Edges) != len(keys) {
-		t.Errorf("read %d edges, the demo world has %d", len(read.Edges), len(keys))
-	}
-	checkDemoEvents(t, m.world.events, want.Events)
-}
-
-// checkDemoEvents compares events read from the files with the demo world's, ignoring ids.
-func checkDemoEvents(t *testing.T, read, want []model.Event) {
-	t.Helper()
-	if len(read) != len(want) {
-		t.Fatalf("read %d events, the demo world has %d", len(read), len(want))
-	}
-	read, want = slices.SortedStableFunc(slices.Values(read), compareEvents), slices.SortedStableFunc(slices.Values(want), compareEvents)
-	for i := range read {
-		if !sameEvent(read[i], want[i]) {
-			t.Errorf("read event %+v\nwant %+v", read[i], want[i])
-		}
-	}
-}
-
-func compareEvents(a, b model.Event) int {
-	return cmp.Or(a.At.Compare(b.At), strings.Compare(string(a.Entity), string(b.Entity)), strings.Compare(a.Message, b.Message))
-}
-
-// sameEntity compares everything but Seen; attributes by their text, as CSV cells hold them.
-func sameEntity(a, b model.Entity) bool {
-	return a.Ref == b.Ref && a.Kind == b.Kind && a.Name == b.Name && a.Status == b.Status &&
-		a.Source == b.Source && slices.Equal(a.Tags, b.Tags) &&
-		maps.EqualFunc(a.Attrs, b.Attrs, func(x, y model.Value) bool { return x.String() == y.String() })
 }
 
 // BenchmarkDemoLoad times reading and mapping every demo file into a fresh module.
