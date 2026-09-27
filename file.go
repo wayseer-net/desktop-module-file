@@ -188,7 +188,7 @@ func (m *Module) refresh(now time.Time, force map[string]bool) *sdk.ChangeSet {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reload(force)
-	cs := m.tracker.Changes(m.world.ents, m.world.edges, now)
+	cs := m.tracker.ChangesOf(m.world.ents, m.world.edges, now)
 	cs.Events = m.newEvents(now)
 	return cs
 }
@@ -224,7 +224,15 @@ func (m *Module) replay() {
 		d := m.now().Sub(newest)
 		m.shift = &d
 	}
-	m.world.move(*m.shift)
+	m.world.moveEvents(*m.shift)
+}
+
+// offset is how far replay moves recorded sample times; zero without replay.
+func (m *Module) offset() time.Duration {
+	if !m.opts.Replay || m.shift == nil {
+		return 0
+	}
+	return *m.shift
 }
 
 // newEvents returns the files' events not sent before, then problems not reported before.
@@ -280,12 +288,12 @@ func (m *Module) Discover(ctx context.Context) (*sdk.ChangeSet, error) {
 	now := time.Now()
 	cs := &sdk.ChangeSet{}
 	for _, r := range sortedKeys(m.world.ents, cmp.Compare) {
-		e := m.world.ents[r]
+		e := *m.world.ents[r]
 		e.Seen = now
 		cs.Upserts = append(cs.Upserts, e)
 	}
 	for _, k := range sortedKeys(m.world.edges, sdk.CompareEdgeKeys) {
-		cs.Edges = append(cs.Edges, m.world.edges[k])
+		cs.Edges = append(cs.Edges, *m.world.edges[k])
 	}
 	return cs, nil
 }
@@ -293,22 +301,26 @@ func (m *Module) Discover(ctx context.Context) (*sdk.ChangeSet, error) {
 // Metrics lists the series the mapping reads.
 func (m *Module) Metrics() []sdk.Metric { return slices.Clone(m.catalogue) }
 
-// QuerySeries answers from the points last read, thinned to about one point per step.
+// QuerySeries answers from the points last read, thinned to about one point per step and
+// moved by replay's shift.
 func (m *Module) QuerySeries(ctx context.Context, q sdk.SeriesQuery) ([]sdk.Series, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	d := m.offset()
+	q.Window = sdk.TimeWindow{From: q.Window.From.Add(-d), To: q.Window.To.Add(-d)}
 	var out []sdk.Series
 	for _, e := range m.matching(q) {
 		for _, name := range q.Metrics {
 			ref := sdk.SeriesRef{Entity: e.Ref, Metric: name}
-			ps, ok := m.world.points[ref]
+			s, ok := m.world.points[ref]
 			if !ok {
 				continue
 			}
-			out = append(out, sdk.Series{Ref: ref, Unit: m.unit(name), Points: thin(within(ps, q.Window), q)})
+			ps := thin(s.within(q.Window.From.UnixNano(), q.Window.To.UnixNano()), q)
+			out = append(out, sdk.Series{Ref: ref, Unit: m.unit(name), Points: shift(ps, d)})
 		}
 	}
 	return out, nil
@@ -319,14 +331,14 @@ func (m *Module) matching(q sdk.SeriesQuery) []sdk.Entity {
 	if len(q.Entities) > 0 {
 		for _, r := range q.Entities {
 			if e, ok := m.world.ents[r]; ok {
-				out = append(out, e)
+				out = append(out, *e)
 			}
 		}
 		return out
 	}
 	for _, r := range sortedKeys(m.world.ents, cmp.Compare) {
-		if e := m.world.ents[r]; q.Filter.Match(&e) {
-			out = append(out, e)
+		if e := m.world.ents[r]; q.Filter.Match(e) {
+			out = append(out, *e)
 		}
 	}
 	return out
@@ -340,18 +352,19 @@ func (m *Module) unit(metric string) sdk.Unit {
 	return m.catalogue[i].Unit
 }
 
-// within returns the points of sorted ps inside w, sharing ps's memory.
-func within(ps []sdk.Point, w sdk.TimeWindow) []sdk.Point {
-	from, _ := slices.BinarySearchFunc(ps, w.From.UnixNano(), func(p sdk.Point, t int64) int { return cmp.Compare(p.T, t) })
-	to, _ := slices.BinarySearchFunc(ps, w.To.UnixNano(), func(p sdk.Point, t int64) int { return cmp.Compare(p.T, t) })
-	return ps[from:to]
-}
-
 func thin(ps []sdk.Point, q sdk.SeriesQuery) []sdk.Point {
 	if q.Step <= 0 {
-		return slices.Clone(ps)
+		return ps
 	}
 	return sdk.Downsample(ps, q.Window, int(q.Window.Span()/q.Step))
+}
+
+// shift moves every time in ps by d, in place.
+func shift(ps []sdk.Point, d time.Duration) []sdk.Point {
+	for i := range ps {
+		ps[i].T += int64(d)
+	}
+	return ps
 }
 
 // QueryEvents answers from the events sent so far: the files' and problem reports.

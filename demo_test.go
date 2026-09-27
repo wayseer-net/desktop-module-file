@@ -94,3 +94,23 @@ func BenchmarkDemoLoad(b *testing.B) {
 		}
 	}
 }
+
+// BenchmarkQuerySeriesDay times a day of one host's CPU, as a sparkline asks for it.
+func BenchmarkQuerySeriesDay(b *testing.B) {
+	b.Chdir("../..")
+	m := demoModule(b)
+	if _, err := m.Discover(b.Context()); err != nil {
+		b.Fatal(err)
+	}
+	host, _ := sdk.NewEntityRef("demo", sdk.KindHost, "ams1-db-001")
+	q := sdk.SeriesQuery{
+		Entities: []sdk.EntityRef{host}, Metrics: []string{"cpu.utilisation"}, Step: 30 * time.Minute,
+		Window: sdk.TimeWindow{From: time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		if ss, err := m.QuerySeries(b.Context(), q); err != nil || len(ss) != 1 {
+			b.Fatalf("%d series, %v", len(ss), err)
+		}
+	}
+}

@@ -21,9 +21,9 @@ type report struct {
 
 // state is the world all files describe together.
 type state struct {
-	ents    map[sdk.EntityRef]sdk.Entity
-	edges   map[sdk.EdgeKey]sdk.Edge
-	points  map[sdk.SeriesRef][]sdk.Point
+	ents    map[sdk.EntityRef]*sdk.Entity // into the files' loaded entities, which stay as read
+	edges   map[sdk.EdgeKey]*sdk.Edge
+	points  map[sdk.SeriesRef]series
 	events  []sdk.Event // oldest first, one per id
 	reports []report
 	err     error // every file-level failure
@@ -31,7 +31,7 @@ type state struct {
 
 // combine merges the files in config order; an entity id seen twice keeps its first record.
 func combine(srcs []source, files []loaded) state {
-	w := state{ents: map[sdk.EntityRef]sdk.Entity{}, edges: map[sdk.EdgeKey]sdk.Edge{}, points: map[sdk.SeriesRef][]sdk.Point{}}
+	w := state{ents: map[sdk.EntityRef]*sdk.Entity{}, edges: map[sdk.EdgeKey]*sdk.Edge{}, points: map[sdk.SeriesRef]series{}}
 	first := map[sdk.EntityRef]string{}
 	var errs []error
 	for i, l := range files {
@@ -42,15 +42,16 @@ func combine(srcs []source, files []loaded) state {
 			continue
 		}
 		probs := slices.Clone(l.probs)
-		for _, m := range l.ents {
+		for j := range l.ents {
+			m := &l.ents[j]
 			if at, dup := first[m.ent.Ref]; dup {
 				probs = append(probs, problem{m.line, fmt.Sprintf("duplicate id %q, first at %s", m.ent.Ref.Native(), at)})
 				continue
 			}
 			first[m.ent.Ref] = fmt.Sprintf("%s:%d", path, m.line)
-			w.ents[m.ent.Ref] = m.ent
-			for _, e := range m.edges {
-				w.edges[e.Key()] = e
+			w.ents[m.ent.Ref] = &m.ent
+			for k := range m.edges {
+				w.edges[m.edges[k].Key()] = &m.edges[k]
 			}
 		}
 		w.addPoints(l.points)
@@ -58,8 +59,8 @@ func combine(srcs []source, files []loaded) state {
 		w.reports = append(w.reports, reports(path, probs)...)
 	}
 	for _, l := range files {
-		for _, e := range l.implied {
-			if _, ok := w.ents[e.Ref]; !ok {
+		for j := range l.implied {
+			if e := &l.implied[j]; w.ents[e.Ref] == nil {
 				w.ents[e.Ref] = e
 			}
 		}
@@ -69,12 +70,14 @@ func combine(srcs []source, files []loaded) state {
 	return w
 }
 
-func (w *state) addPoints(from map[sdk.SeriesRef][]sdk.Point) {
-	for ref, ps := range from {
+// addPoints adds a file's series; a series in two files merges, the later file's sample
+// winning at the same time.
+func (w *state) addPoints(from map[sdk.SeriesRef]series) {
+	for ref, s := range from {
 		if have, ok := w.points[ref]; ok {
-			w.points[ref] = sortPoints(append(slices.Clone(have), ps...))
+			w.points[ref] = pack(sortPoints(append(have.all(), s.all()...)))
 		} else {
-			w.points[ref] = ps
+			w.points[ref] = s
 		}
 	}
 }
@@ -112,9 +115,9 @@ func uniqueEvents(evs []sdk.Event) []sdk.Event {
 func (w *state) newest() (time.Time, bool) {
 	var t int64
 	found := false
-	for _, ps := range w.points {
-		if n := len(ps); n > 0 && (!found || ps[n-1].T > t) {
-			t, found = ps[n-1].T, true
+	for _, s := range w.points {
+		if last, ok := s.last(); ok && (!found || last > t) {
+			t, found = last, true
 		}
 	}
 	if n := len(w.events); n > 0 && (!found || w.events[n-1].At.UnixNano() > t) {
@@ -123,15 +126,8 @@ func (w *state) newest() (time.Time, bool) {
 	return time.Unix(0, t).UTC(), found
 }
 
-// move shifts every sample and event by d, copying so the files' loaded times stay as read.
-func (w *state) move(d time.Duration) {
-	for ref, ps := range w.points {
-		moved := make([]sdk.Point, len(ps))
-		for i, p := range ps {
-			moved[i] = sdk.Point{T: p.T + int64(d), V: p.V}
-		}
-		w.points[ref] = moved
-	}
+// moveEvents shifts every event by d; samples stay as read, and queries move them instead.
+func (w *state) moveEvents(d time.Duration) {
 	for i := range w.events {
 		w.events[i].At = w.events[i].At.Add(d)
 	}

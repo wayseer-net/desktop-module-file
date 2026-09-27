@@ -46,57 +46,69 @@ type loaded struct {
 	ents    []mapped
 	implied []sdk.Entity // bare entities for series ids
 	events  []sdk.Event
-	points  map[sdk.SeriesRef][]sdk.Point
+	points  map[sdk.SeriesRef]series
+	raw     map[sdk.SeriesRef][]sdk.Point // points as read, before they are packed
 	probs   []problem
 	err     error         // the file as a whole could not be used
 	scratch []metricPoint // one record's points, reused across records
+	sets    attrSets      // attribute maps shared while loading
 }
 
 // load reads and maps the file; a file-level failure leaves it contributing nothing.
 func (s *source) load(inst sdk.ModuleID) loaded {
 	st, err := statFile(s.abs)
-	l := loaded{read: true, stamp: st, points: map[sdk.SeriesRef][]sdk.Point{}}
-	var src []byte
+	l := loaded{read: true, stamp: st, points: map[sdk.SeriesRef]series{}, raw: map[sdk.SeriesRef][]sdk.Point{}}
+	implied := map[sdk.EntityRef]bool{}
 	if err == nil {
-		src, err = os.ReadFile(s.abs)
-	}
-	var recs []record
-	if err == nil {
-		recs, l.probs, err = s.parse(src)
+		var malformed []problem
+		malformed, err = s.parse(func(r record) {
+			s.mapEntity(inst, r, &l)
+			s.mapSeries(inst, r, &l, implied)
+			s.mapEvent(inst, r, &l)
+		})
+		l.probs = append(l.probs, malformed...)
 	}
 	if err != nil {
 		if pe := (*fs.PathError)(nil); errors.As(err, &pe) {
 			err = pe.Err // the path is added when reported
 		}
-		l.err = err
-		return l
+		return loaded{read: true, stamp: st, err: err} // nothing mapped before the failure counts
 	}
-	implied := map[sdk.EntityRef]bool{}
-	for _, r := range recs {
-		s.mapEntity(inst, r, &l)
-		s.mapSeries(inst, r, &l, implied)
-		s.mapEvent(inst, r, &l)
+	for ref, ps := range l.raw {
+		l.points[ref] = pack(sortPoints(ps))
 	}
-	for ref, ps := range l.points {
-		l.points[ref] = sortPoints(ps)
-	}
+	l.raw = nil
+	l.ents, l.implied = slices.Clone(l.ents), slices.Clone(l.implied) // without append's slack
+	l.sets, l.scratch = attrSets{}, nil
 	return l
 }
 
-func (s *source) parse(src []byte) ([]record, []problem, error) {
+// parse reads the file, passing each record to each in order, and returns the malformed ones.
+// A CSV file is streamed, so its size is never held at once.
+func (s *source) parse(each func(record)) ([]problem, error) {
 	if s.Format == "json" {
-		return readJSON(src, s.Records)
+		src, err := os.ReadFile(s.abs)
+		if err != nil {
+			return nil, err
+		}
+		return readJSON(src, s.Records, each)
 	}
-	cols, recs, probs, err := readCSV(src, s.delim)
+	f, err := os.Open(s.abs)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	defer func() { _ = f.Close() }()
+	return readCSV(f, s.delim, s.checkColumns, each)
+}
+
+// checkColumns rejects a header lacking a field the mapping reads.
+func (s *source) checkColumns(cols []string) error {
 	for _, f := range s.fields() {
 		if !slices.Contains(cols, f) {
-			return nil, nil, fmt.Errorf("no column %q (columns: %s)", f, strings.Join(cols, ", "))
+			return fmt.Errorf("no column %q (columns: %s)", f, strings.Join(cols, ", "))
 		}
 	}
-	return recs, probs, nil
+	return nil
 }
 
 // fields lists every field the mapping reads.
@@ -126,7 +138,7 @@ func (s *source) mapEntity(inst sdk.ModuleID, r record, l *loaded) {
 	if s.Entities == nil {
 		return
 	}
-	e, edges, err := s.Entities.entity(inst, r)
+	e, edges, err := s.Entities.entity(inst, r, &l.sets)
 	if err != nil {
 		l.probs = append(l.probs, r.problem("%v", err))
 		return
@@ -150,12 +162,12 @@ func (s *source) mapSeries(inst sdk.ModuleID, r record, l *loaded, implied map[s
 	}
 	for _, mp := range points {
 		ref := sdk.SeriesRef{Entity: e.Ref, Metric: mp.metric}
-		l.points[ref] = append(l.points[ref], mp.p)
+		l.raw[ref] = append(l.raw[ref], mp.p)
 	}
 }
 
 // entity maps one record; any bad field rejects the whole record.
-func (m *entityMap) entity(inst sdk.ModuleID, r record) (sdk.Entity, []sdk.Edge, error) {
+func (m *entityMap) entity(inst sdk.ModuleID, r record, sets *attrSets) (sdk.Entity, []sdk.Edge, error) {
 	e, err := bareEntity(inst, m.Kind, m.ID, r)
 	if err != nil {
 		return e, nil, err
@@ -169,7 +181,7 @@ func (m *entityMap) entity(inst sdk.ModuleID, r record) (sdk.Entity, []sdk.Edge,
 	if err := errors.Join(err1, err2, err3); err != nil {
 		return e, nil, err
 	}
-	e.Status, e.Tags, e.Attrs = st, tags, attrs(r, m.Attrs)
+	e.Status, e.Tags, e.Attrs = st, tags, sets.attrs(r, m.Attrs)
 	return e, edges, nil
 }
 
