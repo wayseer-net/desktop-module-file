@@ -60,12 +60,29 @@ files:
 `
 
 func TestConformance(t *testing.T) {
+	working, failing := conformanceOptions(t)
 	sdktest.Conform(t, sdktest.Case{
 		New:     func() sdk.Module { return New() },
 		Name:    "inventory",
-		Options: hostsOptions + strings.TrimPrefix(cpuOptions, "\nfiles:\n") + strings.TrimPrefix(eventsOptions, "\nfiles:\n"),
-		Failing: "files: [{path: /nonexistent/mindseye/hosts.csv, entities: {kind: host, id: hostname}}]",
+		Options: working,
+		Failing: failing,
 	})
+}
+
+// conformanceOptions are the working and failing options shared with cmd/mindseye-file.
+func conformanceOptions(t *testing.T) (working, failing string) {
+	t.Helper()
+	src, err := os.ReadFile(fixtures + "conformance.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct{ Working, Failing yaml.Node }
+	if err := yaml.Unmarshal(src, &doc); err != nil {
+		t.Fatal(err)
+	}
+	w, _ := yaml.Marshal(&doc.Working)
+	f, _ := yaml.Marshal(&doc.Failing)
+	return string(w), string(f)
 }
 
 func TestCSVEntitiesMapColumns(t *testing.T) {
