@@ -15,13 +15,13 @@ const defaultEventKind = "event"
 
 // eventMap makes an event of each record, about the entity of Kind in field ID when set.
 type eventMap struct {
-	Kind     sdk.Kind `yaml:"kind"`
-	ID       string   `yaml:"id"` // an empty cell makes a global event
-	Time     string   `yaml:"time"`
-	Severity string   `yaml:"severity"` // default info
-	Type     string   `yaml:"type"`     // e.g. deploy or alert; default "event"
-	Message  string   `yaml:"message"`
-	Fields   []string `yaml:"fields"`
+	Kind     sdk.Kind `yaml:"kind"`     // with id, the kind of the entity each event is about
+	ID       string   `yaml:"id"`       // the field holding that entity's id; an empty cell makes a global event
+	Time     string   `yaml:"time"`     // the field holding the time, RFC 3339 or Unix seconds; required
+	Severity string   `yaml:"severity"` // the field holding debug, info, warn, error or critical; default info
+	Type     string   `yaml:"type"`     // the field holding its type, such as deploy or alert; default event
+	Message  string   `yaml:"message"`  // the field holding its message; required
+	Fields   []string `yaml:"fields"`   // fields kept on the event
 }
 
 func (m *eventMap) validate() error {

@@ -12,53 +12,53 @@ import (
 )
 
 type options struct {
-	Files  []source      `yaml:"files"`
-	Rescan time.Duration `yaml:"rescan"` // how often to check files the watcher may have missed
-	Replay bool          `yaml:"replay"` // move recorded times so the newest is when first loaded
+	Files  []source      `yaml:"files"`  // the files read, and how their records map to the world; required
+	Rescan time.Duration `yaml:"rescan"` // how often to check files the watcher may have missed; default 5s
+	Replay bool          `yaml:"replay"` // move recorded times so the newest is when the files were first loaded; default false
 }
 
 // source is one file and how its records map to the world.
 type source struct {
-	Path      string     `yaml:"path"`
-	Format    string     `yaml:"format"`    // csv or json; default from the extension
-	Delimiter string     `yaml:"delimiter"` // CSV only; default ',' (tab for .tsv)
-	Records   string     `yaml:"records"`   // JSON only: dotted path to the array of records
-	Entities  *entityMap `yaml:"entities"`
-	Series    *seriesMap `yaml:"series"`
-	Events    *eventMap  `yaml:"events"`
+	Path      string     `yaml:"path"`      // the file; ~/ is the home directory; required
+	Format    string     `yaml:"format"`    // the format: csv, tsv or json; default from the extension
+	Delimiter string     `yaml:"delimiter"` // CSV only: the field separator; default a comma, or a tab for tsv
+	Records   string     `yaml:"records"`   // JSON only: dotted path to the array of records; default the top-level array
+	Entities  *entityMap `yaml:"entities"`  // each record as an entity
+	Series    *seriesMap `yaml:"series"`    // each record as samples of metrics
+	Events    *eventMap  `yaml:"events"`    // each record as an event
 
 	abs   string // cleaned absolute path, set by prepare
 	delim rune
 }
 
 type entityMap struct {
-	Kind   sdk.Kind  `yaml:"kind"`
-	ID     string    `yaml:"id"`
-	Name   string    `yaml:"name"`
-	Status string    `yaml:"status"`
-	Reason string    `yaml:"reason"`
-	Attrs  []string  `yaml:"attrs"`
-	Tags   string    `yaml:"tags"`
-	Edges  []edgeMap `yaml:"edges"`
+	Kind   sdk.Kind  `yaml:"kind"`   // the entities' kind, such as host or service; required
+	ID     string    `yaml:"id"`     // the field holding each entity's id; required
+	Name   string    `yaml:"name"`   // the field holding its name; default the id
+	Status string    `yaml:"status"` // the field holding ok, warn, crit, down or unknown
+	Reason string    `yaml:"reason"` // the field explaining the status
+	Attrs  []string  `yaml:"attrs"`  // fields kept as attributes
+	Tags   string    `yaml:"tags"`   // the field holding its tags
+	Edges  []edgeMap `yaml:"edges"`  // links from each entity to others
 }
 
 // edgeMap makes an edge from each record to the entities of Kind whose ids are in field To.
 type edgeMap struct {
-	Rel  sdk.Relation `yaml:"rel"`
-	To   string       `yaml:"to"`
-	Kind sdk.Kind     `yaml:"kind"`
+	Rel  sdk.Relation `yaml:"rel"`  // the relation, such as depends_on or parent_of; required
+	To   string       `yaml:"to"`   // the field holding the ids it links to; required
+	Kind sdk.Kind     `yaml:"kind"` // the kind of the entities it links to; required
 }
 
 type seriesMap struct {
-	Kind    sdk.Kind             `yaml:"kind"`
-	ID      string               `yaml:"id"`
-	Time    string               `yaml:"time"`
-	Metrics map[string]metricMap `yaml:"metrics"` // canonical metric name → its field
+	Kind    sdk.Kind             `yaml:"kind"`    // the kind of the entity each record is about; required
+	ID      string               `yaml:"id"`      // the field holding that entity's id; required
+	Time    string               `yaml:"time"`    // the field holding the time, RFC 3339 or Unix seconds; required
+	Metrics map[string]metricMap `yaml:"metrics"` // metric name to its field and unit; required
 }
 
 type metricMap struct {
-	Field string   `yaml:"field"`
-	Unit  sdk.Unit `yaml:"unit"`
+	Field string   `yaml:"field"` // the field holding the value; required
+	Unit  sdk.Unit `yaml:"unit"`  // the unit: bytes, bytes_per_second, bits, bits_per_second, percent, ratio, seconds, count or per_second
 }
 
 const minRescan = 100 * time.Millisecond
