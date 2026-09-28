@@ -6,6 +6,7 @@ import (
 	"mindseye/pkg/sdk"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -32,14 +33,15 @@ type source struct {
 }
 
 type entityMap struct {
-	Kind   sdk.Kind  `yaml:"kind"`   // the entities' kind, such as host or service; required
-	ID     string    `yaml:"id"`     // the field holding each entity's id; required
-	Name   string    `yaml:"name"`   // the field holding its name; default the id
-	Status string    `yaml:"status"` // the field holding ok, warn, crit, down or unknown
-	Reason string    `yaml:"reason"` // the field explaining the status
-	Attrs  []string  `yaml:"attrs"`  // fields kept as attributes
-	Tags   string    `yaml:"tags"`   // the field holding its tags
-	Edges  []edgeMap `yaml:"edges"`  // links from each entity to others
+	Kind   sdk.Kind            `yaml:"kind"`   // the entities' kind, such as host or service; required
+	ID     string              `yaml:"id"`     // the field holding each entity's id; required
+	Name   string              `yaml:"name"`   // the field holding its name; default the id
+	Status string              `yaml:"status"` // the field holding ok, warn, crit, down or unknown
+	Reason string              `yaml:"reason"` // the field explaining the status
+	Attrs  []string            `yaml:"attrs"`  // fields kept as attributes
+	Units  map[string]sdk.Unit `yaml:"units"`  // the unit of a numeric attribute, by its field: bytes, seconds, percent and so on
+	Tags   string              `yaml:"tags"`   // the field holding its tags
+	Edges  []edgeMap           `yaml:"edges"`  // links from each entity to others
 }
 
 // edgeMap makes an edge from each record to the entities of Kind whose ids are in field To.
@@ -154,6 +156,12 @@ func (e *entityMap) validate() error {
 			errs = append(errs, fmt.Errorf("entities.edges[%d]: empty to", i))
 		}
 		errs = append(errs, ed.Rel.Validate(), ed.Kind.Validate())
+	}
+	for field, u := range e.Units {
+		if !slices.Contains(e.Attrs, field) {
+			errs = append(errs, fmt.Errorf("entities.units: %s is not one of the attrs", field))
+		}
+		errs = append(errs, u.Validate())
 	}
 	return errors.Join(errs...)
 }

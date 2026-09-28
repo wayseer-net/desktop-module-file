@@ -109,6 +109,17 @@ func TestCSVEntitiesMapColumns(t *testing.T) {
 		"host/web-01 depends_on host/db-07", "host/web-02 depends_on host/db-07", "host/web-02 depends_on host/cache-1")
 }
 
+func TestUnitsNameAnAttributesUnit(t *testing.T) {
+	w := discover(t, strings.Replace(hostsOptions, "attrs: [os, cores, ssd]", "attrs: [os, cores, ssd]\n      units: {cores: count}", 1))
+	db := w.entity(t, "host", "db-07")
+	if v := db.Attrs["cores"]; !v.Equal(sdk.Number(16).In(sdk.UnitCount)) {
+		t.Errorf("cores = %v in %q, want 16 counted", v, v.Unit())
+	}
+	if u := db.Attrs["os"].Unit(); u != sdk.UnitNone {
+		t.Errorf("os has unit %q", u)
+	}
+}
+
 func TestJSONEntitiesFollowRecordsPath(t *testing.T) {
 	m := configure(t, servicesOptions)
 	w := discoverWith(t, m)
@@ -226,6 +237,8 @@ func TestBadOptionsRejected(t *testing.T) {
 		"files: [{path: x.csv, series: {kind: host, id: a, time: t, metrics: {cpu: {field: c, unit: pct}}}}]",
 		"files: [{path: x.csv, entities: {kind: host, id: a}}, {path: x.csv, entities: {kind: host, id: a}}]",
 		"files: [{path: x.csv, entities: {kind: host, id: a}}]\nrescan: 1ms",
+		"files: [{path: x.csv, entities: {kind: host, id: a, attrs: [m], units: {m: furlongs}}}]",
+		"files: [{path: x.csv, entities: {kind: host, id: a, attrs: [m], units: {n: bytes}}}]", // n is no attribute
 	} {
 		if err := New().Configure(t.Context(), config(t, opts)); err == nil {
 			t.Errorf("accepted %q", opts)

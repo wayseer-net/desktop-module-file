@@ -181,7 +181,7 @@ func (m *entityMap) entity(inst sdk.ModuleID, r record, sets *attrSets) (sdk.Ent
 	if err := errors.Join(err1, err2, err3); err != nil {
 		return e, nil, err
 	}
-	e.Status, e.Tags, e.Attrs = st, tags, sets.attrs(r, m.Attrs)
+	e.Status, e.Tags, e.Attrs = st, tags, sets.attrs(r, m.Attrs, m.Units)
 	return e, edges, nil
 }
 

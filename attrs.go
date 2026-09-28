@@ -15,12 +15,14 @@ type attrSets struct {
 	present []bool
 }
 
-// attrs reads fields from r, sharing the map made for an earlier record with the same values.
-func (a *attrSets) attrs(r record, fields []string) map[string]sdk.Value {
+// attrs reads fields from r, each number in its unit, sharing the map made for an earlier
+// record with the same values.
+func (a *attrSets) attrs(r record, fields []string, units map[string]sdk.Unit) map[string]sdk.Value {
 	a.key, a.vals, a.present = a.key[:0], a.vals[:0], a.present[:0]
 	shareable := true
 	for _, f := range fields {
 		v, ok := r.attr(f)
+		v = v.In(units[f])
 		a.vals, a.present = append(a.vals, v), append(a.present, ok)
 		a.appendKey(v, ok)
 		shareable = shareable && v.Type() != sdk.TypeList
@@ -54,7 +56,7 @@ func (a *attrSets) build(fields []string) map[string]sdk.Value {
 	return out
 }
 
-// appendKey adds a value to the key with its type and length, so "16" and 16 differ and no
+// appendKey adds a value to the key with its type, unit and length, so "16" and 16 differ and no
 // value's text can run into the next.
 func (a *attrSets) appendKey(v sdk.Value, present bool) {
 	if !present {
@@ -62,7 +64,7 @@ func (a *attrSets) appendKey(v sdk.Value, present bool) {
 		return
 	}
 	a.text = v.Append(a.text[:0])
-	a.key = append(a.key, byte(v.Type())+1)
+	a.key = append(append(append(a.key, byte(v.Type())+1), v.Unit()...), ':')
 	a.key = strconv.AppendInt(a.key, int64(len(a.text)), 10)
 	a.key = append(append(a.key, ':'), a.text...)
 }
