@@ -36,8 +36,9 @@ func TestEntitiesCostWhatTheyCarry(t *testing.T) {
 	}
 	per := float64(held) / float64(n)
 	t.Logf("%.0f bytes per entity", per)
-	if per > 1100 {
-		t.Errorf("%.0f bytes held per entity with its edges, want at most 1100", per)
+	// 1100 until P14-T2, when every entity gained a 12-byte place.
+	if per > 1120 {
+		t.Errorf("%.0f bytes held per entity with its edges, want at most 1120", per)
 	}
 }
 
