@@ -20,7 +20,12 @@
 //	              - {rel: depends_on, to: depends, kind: host}
 //	        - path: ~/fleet/services.json
 //	          records: data.services        # dotted path to the array of records
-//	          entities: {kind: service, id: id, attrs: [meta.owner]}
+//	          entities:
+//	            kind: service
+//	            id: id
+//	            attrs: [meta.owner]
+//	            edges:                      # rates per second, one per id in to
+//	              - {rel: talks_to, to: calls, kind: service, rate: call_rates, unit: requests}
 //	        - path: ~/fleet/cpu.csv
 //	          series:
 //	            kind: host

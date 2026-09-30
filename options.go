@@ -46,9 +46,11 @@ type entityMap struct {
 
 // edgeMap makes an edge from each record to the entities of Kind whose ids are in field To.
 type edgeMap struct {
-	Rel  sdk.Relation `yaml:"rel"`  // the relation, such as depends_on or parent_of; required
-	To   string       `yaml:"to"`   // the field holding the ids it links to; required
-	Kind sdk.Kind     `yaml:"kind"` // the kind of the entities it links to; required
+	Rel  sdk.Relation    `yaml:"rel"`  // the relation, such as depends_on or parent_of; required
+	To   string          `yaml:"to"`   // the field holding the ids it links to; required
+	Kind sdk.Kind        `yaml:"kind"` // the kind of the entities it links to; required
+	Rate string          `yaml:"rate"` // the field holding each link's traffic per second, in the order of to
+	Unit sdk.TrafficUnit `yaml:"unit"` // the traffic's unit: requests, bytes or messages; required with rate
 }
 
 type seriesMap struct {
@@ -155,7 +157,7 @@ func (e *entityMap) validate() error {
 		if ed.To == "" {
 			errs = append(errs, fmt.Errorf("entities.edges[%d]: empty to", i))
 		}
-		errs = append(errs, ed.Rel.Validate(), ed.Kind.Validate())
+		errs = append(errs, ed.Rel.Validate(), ed.Kind.Validate(), ed.validateRate(i))
 	}
 	for field, u := range e.Units {
 		if !slices.Contains(e.Attrs, field) {
@@ -164,6 +166,16 @@ func (e *entityMap) validate() error {
 		errs = append(errs, u.Validate())
 	}
 	return errors.Join(errs...)
+}
+
+func (ed edgeMap) validateRate(i int) error {
+	switch {
+	case ed.Rate != "" && ed.Unit == sdk.TrafficNone:
+		return fmt.Errorf("entities.edges[%d]: rate needs a unit: requests, bytes or messages", i)
+	case ed.Rate == "" && ed.Unit != sdk.TrafficNone:
+		return fmt.Errorf("entities.edges[%d]: unit needs a rate", i)
+	}
+	return nil
 }
 
 func (m *seriesMap) validate(units map[string]sdk.Unit) error {

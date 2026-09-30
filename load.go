@@ -118,7 +118,7 @@ func (s *source) fields() []string {
 		out = append(out, e.ID, e.Name, e.Status, e.Reason, e.Tags)
 		out = append(out, e.Attrs...)
 		for _, ed := range e.Edges {
-			out = append(out, ed.To)
+			out = append(out, ed.To, ed.Rate)
 		}
 	}
 	if m := s.Series; m != nil {
@@ -239,7 +239,15 @@ func (m *entityMap) edges(inst sdk.ModuleID, from sdk.EntityRef, r record) ([]sd
 		if err != nil {
 			return nil, err
 		}
-		for _, t := range targets {
+		traffic, err := ed.traffic(r, len(targets))
+		if err != nil {
+			return nil, err
+		}
+		for i, t := range targets {
+			var tr sdk.Traffic
+			if traffic != nil {
+				tr = traffic[i]
+			}
 			to, err := sdk.NewEntityRef(string(inst), ed.Kind, t)
 			if err != nil {
 				return nil, err
@@ -247,10 +255,33 @@ func (m *entityMap) edges(inst sdk.ModuleID, from sdk.EntityRef, r record) ([]sd
 			if to == from {
 				return nil, fmt.Errorf("%s: %s relates to itself", ed.To, t)
 			}
-			out = append(out, sdk.Edge{From: from, To: to, Rel: ed.Rel, Weight: 1, Source: inst})
+			out = append(out, sdk.Edge{From: from, To: to, Rel: ed.Rel, Weight: 1, Source: inst, Traffic: tr})
 		}
 	}
 	return out, nil
+}
+
+// traffic reads the rates for n targets; nil means none are given, so no traffic is known.
+func (ed edgeMap) traffic(r record, n int) ([]sdk.Traffic, error) {
+	if ed.Rate == "" {
+		return nil, nil
+	}
+	cells, err := r.list(ed.Rate)
+	if err != nil || len(cells) == 0 {
+		return nil, err
+	}
+	if len(cells) != n {
+		return nil, fmt.Errorf("%s: %d rates for %d in %s", ed.Rate, len(cells), n, ed.To)
+	}
+	ts := make([]sdk.Traffic, n)
+	for i, c := range cells {
+		rate, err := strconv.ParseFloat(c, 64)
+		ts[i] = sdk.Traffic{Rate: rate, Unit: ed.Unit}
+		if err != nil || ts[i].Validate() != nil {
+			return nil, fmt.Errorf("%s: %q is not a rate", ed.Rate, c)
+		}
+	}
+	return ts, nil
 }
 
 type metricPoint struct {
