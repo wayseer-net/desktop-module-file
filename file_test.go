@@ -2,14 +2,14 @@ package file
 
 import (
 	"context"
-	"mindseye/pkg/sdk"
-	"mindseye/pkg/sdk/sdktest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"wayseer/pkg/sdk"
+	"wayseer/pkg/sdk/sdktest"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -69,7 +69,7 @@ func TestConformance(t *testing.T) {
 	})
 }
 
-// conformanceOptions are the working and failing options shared with cmd/mindseye-file.
+// conformanceOptions are the working and failing options shared with cmd/wayseer-file.
 func conformanceOptions(t *testing.T) (working, failing string) {
 	t.Helper()
 	src, err := os.ReadFile(fixtures + "conformance.yaml")

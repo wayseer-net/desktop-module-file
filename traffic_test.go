@@ -1,10 +1,10 @@
 package file
 
 import (
-	"mindseye/pkg/sdk"
 	"os"
 	"path/filepath"
 	"testing"
+	"wayseer/pkg/sdk"
 )
 
 // callsOptions maps calls.csv in dir: each service talks to the services in calls, at rates.

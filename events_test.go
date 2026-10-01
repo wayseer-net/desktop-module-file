@@ -1,11 +1,11 @@
 package file
 
 import (
-	"mindseye/pkg/sdk"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"wayseer/pkg/sdk"
 )
 
 const eventsOptions = `

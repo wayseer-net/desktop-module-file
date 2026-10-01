@@ -2,9 +2,9 @@ package file
 
 import (
 	"fmt"
-	"mindseye/pkg/sdk"
 	"strings"
 	"testing"
+	"wayseer/pkg/sdk"
 )
 
 func TestReadJSONTopLevelArrayWithLines(t *testing.T) {

@@ -1,11 +1,11 @@
 package file
 
 import (
-	"mindseye/pkg/sdk"
 	"os"
 	"slices"
 	"testing"
 	"time"
+	"wayseer/pkg/sdk"
 
 	"go.yaml.in/yaml/v3"
 )

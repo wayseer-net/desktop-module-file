@@ -5,13 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"mindseye/pkg/sdk"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"wayseer/pkg/sdk"
 
 	"github.com/fsnotify/fsnotify"
 )

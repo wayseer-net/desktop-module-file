@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"mindseye/pkg/sdk"
 	"slices"
 	"time"
+	"wayseer/pkg/sdk"
 )
 
 // problemCap bounds the problems reported per file, so one broken file cannot flood the log.

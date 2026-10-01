@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"mindseye/pkg/sdk"
 	"strconv"
 	"strings"
 	"time"
+	"wayseer/pkg/sdk"
 )
 
 // defaultEventKind is the kind of events whose mapping names no type field.

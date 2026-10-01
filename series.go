@@ -2,8 +2,8 @@ package file
 
 import (
 	"cmp"
-	"mindseye/pkg/sdk"
 	"slices"
+	"wayseer/pkg/sdk"
 )
 
 // series is one series' samples in time order. Evenly spaced samples, as recordings and

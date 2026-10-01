@@ -8,8 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mindseye/pkg/sdk"
 	"strings"
+	"wayseer/pkg/sdk"
 )
 
 var bom = []byte("\xef\xbb\xbf")

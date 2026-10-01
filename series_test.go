@@ -1,9 +1,9 @@
 package file
 
 import (
-	"mindseye/pkg/sdk"
 	"slices"
 	"testing"
+	"wayseer/pkg/sdk"
 )
 
 func pts(ts ...int64) []sdk.Point {

@@ -3,13 +3,13 @@ package file
 import (
 	"errors"
 	"fmt"
-	"mindseye/pkg/sdk"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
+	"wayseer/pkg/sdk"
 )
 
 type options struct {

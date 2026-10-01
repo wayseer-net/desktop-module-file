@@ -1,10 +1,10 @@
 package file
 
 import (
-	"mindseye/pkg/sdk"
 	"strings"
 	"testing"
 	"time"
+	"wayseer/pkg/sdk"
 )
 
 // recording is the cpu series and host events, replayed or not.

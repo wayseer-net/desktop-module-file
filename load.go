@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
-	"mindseye/pkg/sdk"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"wayseer/pkg/sdk"
 )
 
 // stamp tells whether a file may have changed since it was read.
