@@ -69,7 +69,7 @@ func TestConformance(t *testing.T) {
 	})
 }
 
-// conformanceOptions are the working and failing options shared with cmd/wayseer-file.
+// conformanceOptions are the working and failing options shared with the external file program.
 func conformanceOptions(t *testing.T) (working, failing string) {
 	t.Helper()
 	src, err := os.ReadFile(fixtures + "conformance.yaml")
