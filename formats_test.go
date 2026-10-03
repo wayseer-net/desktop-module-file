@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 func TestReadJSONTopLevelArrayWithLines(t *testing.T) {

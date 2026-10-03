@@ -7,7 +7,8 @@ import (
 	"maps"
 	"slices"
 	"time"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // problemCap bounds the problems reported per file, so one broken file cannot flood the log.

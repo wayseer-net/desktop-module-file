@@ -3,7 +3,8 @@ package file
 import (
 	"cmp"
 	"slices"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // series is one series' samples in time order. Evenly spaced samples, as recordings and

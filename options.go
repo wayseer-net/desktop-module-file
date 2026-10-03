@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 type options struct {

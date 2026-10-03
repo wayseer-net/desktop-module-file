@@ -11,7 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // stamp tells whether a file may have changed since it was read.

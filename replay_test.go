@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // recording is the cpu series and host events, replayed or not.

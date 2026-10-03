@@ -3,7 +3,8 @@ package file
 import (
 	"slices"
 	"testing"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 func pts(ts ...int64) []sdk.Point {

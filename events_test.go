@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 const eventsOptions = `

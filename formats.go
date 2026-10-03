@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 var bom = []byte("\xef\xbb\xbf")

@@ -2,7 +2,8 @@ package file
 
 import (
 	"strconv"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // attrSets lets a file's entities with the same attributes share one map; nothing changes an

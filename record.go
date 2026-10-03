@@ -7,7 +7,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // record is one CSV row or JSON object, starting at line.

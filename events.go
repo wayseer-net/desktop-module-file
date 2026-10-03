@@ -7,7 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // defaultEventKind is the kind of events whose mapping names no type field.

@@ -4,7 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 )
 
 // callsOptions maps calls.csv in dir: each service talks to the services in calls, at rates.

@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"wayseer/pkg/sdk"
-	"wayseer/pkg/sdk/sdktest"
+
+	"wayseer.dev/sdk"
+	"wayseer.dev/sdk/sdktest"
 
 	"go.yaml.in/yaml/v3"
 )

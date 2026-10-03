@@ -11,7 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"wayseer/pkg/sdk"
+
+	"wayseer.dev/sdk"
 
 	"github.com/fsnotify/fsnotify"
 )
