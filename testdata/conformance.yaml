@@ -1,5 +1,5 @@
 # The file module's conformance options. Paths are relative to the module's directory.
-# The core keeps a copy in testdata/file for internal/module/remote's file program.
+# The app keeps a copy in its testdata/file for its out-of-process test of this module.
 working:
   files:
     - path: testdata/hosts.csv
