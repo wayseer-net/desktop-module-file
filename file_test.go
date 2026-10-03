@@ -14,7 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const fixtures = "../../testdata/file/"
+const fixtures = "testdata/"
 
 const hostsOptions = `
 files:

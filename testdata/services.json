@@ -1,0 +1,12 @@
+{
+  "generated": "2026-09-01T00:00:00Z",
+  "data": {
+    "skipped": [{"id": "not-a-service"}],
+    "services": [
+      {"id": "checkout", "name": "Checkout", "health": "ok", "meta": {"owner": "web", "replicas": 3}, "hosts": ["web-01", "web-02"]},
+      {"id": "billing", "health": "DOWN", "meta": {"owner": "data"}, "hosts": ["db-07"], "tags": ["pci"]},
+      {"name": "no id here"},
+      {"id": "search", "health": "sideways"}
+    ]
+  }
+}

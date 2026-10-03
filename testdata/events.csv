@@ -1,0 +1,9 @@
+# Change log: the file module's CSV event fixture.
+ts,host,level,what,text,version
+2026-09-01T10:00:00Z,web-01,info,deploy,deployed 1.4,1.4
+2026-09-01T10:05:00Z,web-02,crit,alert,unreachable,
+1788257400,,warning,,maintenance window opens,
+yesterday,web-01,info,deploy,deployed 1.5,1.5
+2026-09-01T10:20:00Z,web-01,loud,deploy,deployed 1.6,1.6
+2026-09-01T10:30:00Z,web-01,info,deploy,,
+2026-09-01T10:00:00Z,web-01,info,deploy,deployed 1.4,1.4

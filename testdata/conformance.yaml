@@ -1,0 +1,35 @@
+# The file module's conformance options. Paths are relative to the module's directory.
+# The core keeps a copy in testdata/file for internal/module/remote's file program.
+working:
+  files:
+    - path: testdata/hosts.csv
+      entities:
+        kind: host
+        id: hostname
+        name: display
+        status: state
+        reason: note
+        attrs: [os, cores, ssd]
+        tags: tags
+        edges:
+          - {rel: member_of, to: team, kind: team}
+          - {rel: depends_on, to: depends, kind: host}
+    - path: testdata/cpu.csv
+      series:
+        kind: host
+        id: host
+        time: ts
+        metrics:
+          cpu.utilisation: {field: cpu, unit: percent}
+          memory.utilisation: {field: mem, unit: percent}
+    - path: testdata/events.csv
+      events:
+        kind: host
+        id: host
+        time: ts
+        severity: level
+        type: what
+        message: text
+        fields: [version]
+failing:
+  files: [{path: /nonexistent/wayseer/hosts.csv, entities: {kind: host, id: hostname}}]

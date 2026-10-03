@@ -1,0 +1,6 @@
+hostname,state,cores
+a,ok,4
+,ok,4
+b,meh,4
+c,ok,4,extra
+d,ok,4

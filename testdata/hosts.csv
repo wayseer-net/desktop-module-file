@@ -1,0 +1,5 @@
+# Fleet inventory: the file module's CSV entity fixture.
+hostname,display,state,note,os,cores,ssd,tags,team,depends
+db-07,Database 07,ok,,linux,16,true,prod;db,data,
+web-01,Web 01,warn,disk 91% full,linux,8,false,prod;web,web,db-07
+web-02,,crit,unreachable,linux,8,false,prod; web,web,db-07;cache-1
